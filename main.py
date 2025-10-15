@@ -223,7 +223,7 @@ def send_email(subject, message):
             logging.warning("Email configuration missing")
             return False
             
-        msg = MimeText(message)
+        msg = MIMEText(message)
         msg['Subject'] = subject
         msg['From'] = EMAIL_FROM
         msg['To'] = EMAIL_TO
