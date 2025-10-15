@@ -46,7 +46,7 @@ DATABASE_FILE = os.environ.get('DATABASE_FILE', 'leax_users.db')
 def get_db():
     """Database connection context manager"""
     conn = sqlite3.connect(DATABASE_FILE)
-    conn.row_factory = sqlite3.Row  # Enable column access by name
+    conn.row_factory = sqlite3.Row
     try:
         yield conn
     finally:
@@ -57,7 +57,6 @@ def init_database():
     with get_db() as conn:
         c = conn.cursor()
         
-        # Users table with indexing for performance
         c.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +75,6 @@ def init_database():
             )
         ''')
         
-        # Business info table
         c.execute('''
             CREATE TABLE IF NOT EXISTS business_info (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,7 +91,6 @@ def init_database():
             )
         ''')
         
-        # Conversations table for message history
         c.execute('''
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,109 +105,13 @@ def init_database():
             )
         ''')
         
-        # Payments table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS payments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                payment_id TEXT UNIQUE,
-                amount REAL,
-                currency TEXT DEFAULT 'USD',
-                plan_type TEXT,
-                status TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-            )
-        ''')
-        
-        # System logs table
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS system_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_type TEXT,
-                user_id INTEGER,
-                description TEXT,
-                ip_address TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Create indexes for performance
         c.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_business_info_user_id ON business_info(user_id)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_conversations_timestamp ON conversations(timestamp)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id)')
         
         conn.commit()
 
-# Initialize database on startup
 init_database()
-
-# ==================== DATABASE UTILITIES ====================
-def log_system_event(event_type, user_id=None, description="", ip_address=""):
-    """Log system events for monitoring"""
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO system_logs (event_type, user_id, description, ip_address)
-            VALUES (?, ?, ?, ?)
-        ''', (event_type, user_id, description, ip_address or request.remote_addr))
-        conn.commit()
-
-def get_user_stats():
-    """Get system statistics"""
-    with get_db() as conn:
-        c = conn.cursor()
-        
-        c.execute('SELECT COUNT(*) as total_users FROM users')
-        total_users = c.fetchone()['total_users']
-        
-        c.execute('SELECT COUNT(*) as active_users FROM users WHERE is_active = 1')
-        active_users = c.fetchone()['active_users']
-        
-        c.execute('SELECT COUNT(*) as paid_users FROM users WHERE status != "trial"')
-        paid_users = c.fetchone()['paid_users']
-        
-        c.execute('SELECT SUM(total_messages) as total_messages FROM users')
-        total_messages = c.fetchone()['total_messages'] or 0
-        
-        return {
-            'total_users': total_users,
-            'active_users': active_users,
-            'paid_users': paid_users,
-            'total_messages': total_messages
-        }
-
-def export_user_data(user_id):
-    """Export all user data for portability"""
-    with get_db() as conn:
-        c = conn.cursor()
-        
-        # Get user data
-        c.execute('SELECT * FROM users WHERE id = ?', (user_id,))
-        user = dict(c.fetchone())
-        
-        # Get business info
-        c.execute('SELECT * FROM business_info WHERE user_id = ?', (user_id,))
-        business = dict(c.fetchone()) if c.fetchone() else {}
-        
-        # Get conversations (last 1000 for export)
-        c.execute('SELECT * FROM conversations WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1000', (user_id,))
-        conversations = [dict(row) for row in c.fetchall()]
-        
-        # Get payments
-        c.execute('SELECT * FROM payments WHERE user_id = ?', (user_id,))
-        payments = [dict(row) for row in c.fetchall()]
-        
-        return {
-            'user': user,
-            'business': business,
-            'conversations': conversations,
-            'payments': payments,
-            'exported_at': datetime.now().isoformat()
-        }
 
 # ==================== UTILITY FUNCTIONS ====================
 def hash_password(password):
@@ -233,14 +134,62 @@ def send_email(subject, message):
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
-        
-        log_system_event('email_sent', description=f"Subject: {subject}")
         return True
     except Exception as e:
         logging.error(f"Email error: {e}")
         return False
 
-# ==================== AUTHENTICATION ROUTES ====================
+# ==================== LANDING PAGE ====================
+@app.route('/')
+def index():
+    """Main landing page"""
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>LeaX - AI Phone Agent</title>
+        <style>
+            body { font-family: Arial; max-width: 800px; margin: 100px auto; padding: 20px; text-align: center; }
+            .hero { background: #f8f9fa; padding: 60px 20px; border-radius: 10px; }
+            .btn { background: #007cba; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 10px; }
+            .pricing { display: flex; justify-content: center; gap: 20px; margin: 40px 0; }
+            .plan { border: 1px solid #ddd; padding: 30px; border-radius: 10px; }
+        </style>
+    </head>
+    <body>
+        <div class="hero">
+            <h1>🤖 LeaX AI Phone Agent</h1>
+            <p>Your business gets an AI assistant that answers calls, texts customers, and makes sales - 24/7!</p>
+            
+            <div class="pricing">
+                <div class="plan">
+                    <h3>Starter Plan</h3>
+                    <h2>$29.99/month</h2>
+                    <ul style="text-align: left;">
+                        <li>AI Phone & SMS Agent</li>
+                        <li>Website Scanning</li>
+                        <li>Lead Capture</li>
+                        <li>3 Free Tests</li>
+                    </ul>
+                    <a href="/register" class="btn">Get Started</a>
+                </div>
+            </div>
+        </div>
+        
+        <div style="margin: 40px 0;">
+            <h2>How It Works</h2>
+            <div style="display: flex; justify-content: center; gap: 30px; margin: 30px 0;">
+                <div>1. Sign up & customize</div>
+                <div>2. Test your AI agent</div>
+                <div>3. Connect phone number</div>
+                <div>4. Go live!</div>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+# ==================== AUTHENTICATION ====================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -257,161 +206,618 @@ def login():
             session['email'] = user['email']
             session['business_name'] = user['business_name']
             session['user_plan'] = user['plan_type']
-            
-            log_system_event('user_login', user['id'], "Successful login")
             return redirect(url_for('dashboard'))
         else:
             flash('Invalid email or password')
-            log_system_event('failed_login', description=f"Failed login attempt for: {email}")
     
     return render_template('login.html')
 
-@app.route('/register', methods=['POST'])
+@app.route('/register', methods=['GET', 'POST'])
 def register():
-    email = request.form.get('email')
-    business_name = request.form.get('business_name')
-    password = request.form.get('password')
+    if request.method == 'GET':
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Register - LeaX</title>
+            <style>
+                body { font-family: Arial; max-width: 400px; margin: 100px auto; padding: 20px; }
+                input { width: 100%; padding: 10px; margin: 10px 0; }
+                button { background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; width: 100%; }
+            </style>
+        </head>
+        <body>
+            <h2>Create LeaX Account</h2>
+            <form method="POST">
+                <input type="email" name="email" placeholder="Email" required>
+                <input type="text" name="business_name" placeholder="Business Name" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit">Create Account</button>
+            </form>
+            <p><a href="/login">Already have an account? Login</a></p>
+        </body>
+        </html>
+        '''
     
-    try:
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute('''
-                INSERT INTO users (email, password_hash, business_name, status, plan_type)
-                VALUES (?, ?, ?, 'trial', 'starter')
-            ''', (email, hash_password(password), business_name))
-            user_id = c.lastrowid
+    elif request.method == 'POST':
+        email = request.form.get('email')
+        business_name = request.form.get('business_name')
+        password = request.form.get('password')
+        
+        try:
+            with get_db() as conn:
+                c = conn.cursor()
+                c.execute('''
+                    INSERT INTO users (email, password_hash, business_name, status, plan_type)
+                    VALUES (?, ?, ?, 'trial', 'starter')
+                ''', (email, hash_password(password), business_name))
+                user_id = c.lastrowid
+                
+                c.execute('''
+                    INSERT INTO business_info (user_id, agent_personality)
+                    VALUES (?, 'friendly')
+                ''', (user_id,))
+                
+                conn.commit()
             
-            # Create initial business info record
-            c.execute('''
-                INSERT INTO business_info (user_id, agent_personality)
-                VALUES (?, 'friendly')
-            ''', (user_id,))
+            session['user_id'] = user_id
+            session['email'] = email
+            session['business_name'] = business_name
+            session['user_plan'] = 'starter'
             
-            conn.commit()
-        
-        session['user_id'] = user_id
-        session['email'] = email
-        session['business_name'] = business_name
-        session['user_plan'] = 'starter'
-        
-        # Send notification
-        send_email(
-            "New LeaX Platform Registration",
-            f"New platform user registered:\n"
-            f"Email: {email}\n"
-            f"Business: {business_name}\n"
-            f"User ID: {user_id}\n"
-            f"Platform: {request.host}\n"
-            f"Time: {datetime.now()}\n"
-            f"Total users on platform: {get_user_stats()['total_users']}"
-        )
-        
-        log_system_event('user_registered', user_id, f"New user: {business_name}")
-        return redirect(url_for('customize_agent'))
-        
-    except sqlite3.IntegrityError:
-        flash('Email already exists')
-        return redirect(url_for('index'))
+            send_email(
+                "New LeaX Registration",
+                f"New user registered:\nEmail: {email}\nBusiness: {business_name}\nUser ID: {user_id}"
+            )
+            
+            return redirect(url_for('customize_agent'))
+            
+        except sqlite3.IntegrityError:
+            flash('Email already exists')
+            return redirect(url_for('register'))
 
 @app.route('/logout')
 def logout():
-    if 'user_id' in session:
-        log_system_event('user_logout', session['user_id'], "User logged out")
     session.clear()
     return redirect(url_for('index'))
 
-# ==================== ADMIN & SYSTEM ROUTES ====================
-@app.route('/admin')
-def admin_dashboard():
-    """Admin dashboard with system statistics"""
-    stats = get_user_stats()
+# ==================== DASHBOARD ====================
+@app.route('/dashboard')
+def dashboard():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     
     with get_db() as conn:
         c = conn.cursor()
-        c.execute('''
-            SELECT * FROM users 
-            ORDER BY created_at DESC 
-            LIMIT 10
-        ''')
-        recent_users = [dict(row) for row in c.fetchall()]
-        
-        c.execute('''
-            SELECT * FROM system_logs 
-            ORDER BY created_at DESC 
-            LIMIT 50
-        ''')
-        recent_logs = [dict(row) for row in c.fetchall()]
+        c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
+        user = c.fetchone()
+        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
+        business = c.fetchone()
     
-    return render_template('admin.html', 
-                         stats=stats, 
-                         recent_users=recent_users, 
-                         recent_logs=recent_logs)
+    user_dict = dict(user) if user else {}
+    business_dict = dict(business) if business else {}
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Dashboard - LeaX</title>
+        <style>
+            body {{ font-family: Arial; max-width: 800px; margin: 40px auto; padding: 20px; }}
+            .card {{ background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 8px; }}
+            .btn {{ background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }}
+        </style>
+    </head>
+    <body>
+        <h1>Welcome to LeaX, {session['business_name']}!</h1>
+        
+        <div class="card">
+            <h3>Your Account</h3>
+            <p><strong>Plan:</strong> {user_dict.get('plan_type', 'Starter')}</p>
+            <p><strong>Status:</strong> {user_dict.get('status', 'Active')}</p>
+            <p><strong>Trial Uses:</strong> {user_dict.get('trial_uses', 0)}/3</p>
+        </div>
+        
+        <div class="card">
+            <h3>Quick Actions</h3>
+            <p><a href="/customize" class="btn">Customize Agent</a></p>
+            <p><a href="/test-agent" class="btn">Test Your Agent</a></p>
+            <p><a href="/pricing" class="btn">Upgrade Plan</a></p>
+        </div>
+        
+        <p><a href="/logout">Logout</a></p>
+    </body>
+    </html>
+    '''
 
-@app.route('/admin/export-data')
-def admin_export_data():
-    """Export all system data"""
+# ==================== AGENT CUSTOMIZATION ====================
+@app.route('/customize')
+def customize_agent():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Customize Agent - LeaX</title>
+        <style>
+            body { font-family: Arial; max-width: 600px; margin: 40px auto; padding: 20px; }
+            input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
+            button { background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <h2>Customize Your AI Agent</h2>
+        
+        <div id="message" style="display: none; background: #d4edda; padding: 10px; margin: 10px 0;"></div>
+        
+        <form id="customizeForm">
+            <h3>Business Information</h3>
+            <input type="url" id="website_url" placeholder="Your website URL (optional)">
+            <textarea id="custom_info" placeholder="Custom business info..." rows="4"></textarea>
+            
+            <h3>Agent Personality</h3>
+            <select id="personality">
+                <option value="friendly">Friendly & Helpful</option>
+                <option value="professional">Professional</option>
+                <option value="enthusiastic">Enthusiastic</option>
+            </select>
+            
+            <button type="submit">Save Customization</button>
+        </form>
+        
+        <script>
+            document.getElementById('customizeForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const data = {
+                    website_url: document.getElementById('website_url').value,
+                    custom_info: document.getElementById('custom_info').value,
+                    personality: document.getElementById('personality').value
+                };
+                
+                fetch('/api/save-customization', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                })
+                .then(response => response.json())
+                .then(result => {
+                    const message = document.getElementById('message');
+                    message.style.display = 'block';
+                    message.textContent = 'Customization saved successfully!';
+                    message.style.background = '#d4edda';
+                })
+                .catch(error => {
+                    const message = document.getElementById('message');
+                    message.style.display = 'block';
+                    message.textContent = 'Error saving customization';
+                    message.style.background = '#f8d7da';
+                });
+            });
+        </script>
+        
+        <p><a href="/dashboard">Back to Dashboard</a></p>
+    </body>
+    </html>
+    '''
+
+@app.route('/api/save-customization', methods=['POST'])
+def save_customization():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'})
+    
+    data = request.json
+    
     with get_db() as conn:
         c = conn.cursor()
+        c.execute('''
+            INSERT OR REPLACE INTO business_info 
+            (user_id, website_url, custom_info, agent_personality) 
+            VALUES (?, ?, ?, ?)
+        ''', (session['user_id'], data.get('website_url'), data.get('custom_info'), data.get('personality', 'friendly')))
+        conn.commit()
+    
+    return jsonify({'success': True})
+
+# ==================== TESTING ====================
+@app.route('/test-agent')
+def test_agent():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT trial_uses, max_trial_uses FROM users WHERE id = ?', (session['user_id'],))
+        user = c.fetchone()
         
-        # Get all data
-        c.execute('SELECT * FROM users')
-        users = [dict(row) for row in c.fetchall()]
+        if user['trial_uses'] >= user['max_trial_uses']:
+            return redirect(url_for('pricing'))
         
-        c.execute('SELECT * FROM business_info')
-        business_info = [dict(row) for row in c.fetchall()]
+        c.execute('UPDATE users SET trial_uses = trial_uses + 1 WHERE id = ?', (session['user_id'],))
+        conn.commit()
+    
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Test Agent - LeaX</title>
+        <style>
+            body { font-family: Arial; max-width: 600px; margin: 40px auto; padding: 20px; }
+            #chat { border: 1px solid #ddd; height: 300px; overflow-y: scroll; padding: 10px; margin: 20px 0; }
+            .message { margin: 10px 0; padding: 10px; border-radius: 5px; }
+            .user { background: #007cba; color: white; margin-left: 20%; }
+            .agent { background: #f0f0f0; margin-right: 20%; }
+            input { width: 70%; padding: 10px; }
+            button { padding: 10px 20px; }
+        </style>
+    </head>
+    <body>
+        <h2>Test Your AI Agent</h2>
+        <p>Try chatting with your AI agent to see how it responds!</p>
         
-        c.execute('SELECT COUNT(*) as count FROM conversations')
-        conversation_count = c.fetchone()['count']
+        <div id="chat"></div>
         
-        data = {
-            'export_info': {
-                'exported_at': datetime.now().isoformat(),
-                'total_users': len(users),
-                'total_conversations': conversation_count,
-                'platform_url': request.host
+        <div>
+            <input type="text" id="messageInput" placeholder="Type a message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+        
+        <script>
+            function addMessage(text, isUser) {
+                const chat = document.getElementById('chat');
+                const message = document.createElement('div');
+                message.className = 'message ' + (isUser ? 'user' : 'agent');
+                message.textContent = text;
+                chat.appendChild(message);
+                chat.scrollTop = chat.scrollHeight;
+            }
+            
+            function sendMessage() {
+                const input = document.getElementById('messageInput');
+                const message = input.value.trim();
+                
+                if (message) {
+                    addMessage(message, true);
+                    input.value = '';
+                    
+                    fetch('/api/test-chat', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({message: message})
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        addMessage(data.reply, false);
+                    });
+                }
+            }
+            
+            // Enter key to send
+            document.getElementById('messageInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') sendMessage();
+            });
+        </script>
+        
+        <p><a href="/dashboard">Back to Dashboard</a></p>
+    </body>
+    </html>
+    '''
+
+@app.route('/api/test-chat', methods=['POST'])
+def test_chat():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'})
+    
+    data = request.json
+    user_message = data.get('message')
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
+        business = c.fetchone()
+    
+    business_context = f"""
+BUSINESS: {session.get('business_name', 'Business')}
+WEBSITE: {business['website_url'] if business else ''}
+CUSTOM INFO: {business['custom_info'] if business else ''}
+PERSONALITY: {business['agent_personality'] if business else 'friendly'}
+"""
+    
+    prompt = f"""
+You are a {business['agent_personality'] if business else 'friendly'} sales assistant.
+
+{business_context}
+
+Customer Message: {user_message}
+
+Your response (be human, 1-2 sentences):
+"""
+    
+    try:
+        completion = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.8,
+            max_tokens=100
+        )
+        ai_reply = completion.choices[0].message.content
+    except Exception as e:
+        ai_reply = "Thanks for your message! We'll get back to you soon."
+    
+    return jsonify({'reply': ai_reply})
+
+# ==================== PRICING & PAYMENTS ====================
+@app.route('/pricing')
+def pricing():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Pricing - LeaX</title>
+        <style>
+            body { font-family: Arial; max-width: 800px; margin: 40px auto; padding: 20px; }
+            .pricing-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin: 40px 0; }
+            .plan { border: 1px solid #ddd; padding: 30px; border-radius: 10px; text-align: center; }
+            .btn { background: #007cba; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; }
+            .pro { border-color: #007cba; background: #f0f8ff; }
+        </style>
+    </head>
+    <body>
+        <h2>Choose Your Plan</h2>
+        
+        <div class="pricing-grid">
+            <div class="plan">
+                <h3>Starter</h3>
+                <h2>$29.99/month</h2>
+                <ul style="text-align: left;">
+                    <li>GPT-3.5 Turbo AI</li>
+                    <li>Unlimited messages</li>
+                    <li>Basic customization</li>
+                    <li>Email support</li>
+                </ul>
+                <button onclick="selectPlan('starter')" class="btn">Select Starter</button>
+            </div>
+            
+            <div class="plan pro">
+                <h3>Professional</h3>
+                <h2>$59.99/month</h2>
+                <ul style="text-align: left;">
+                    <li>GPT-4 AI</li>
+                    <li>Unlimited messages</li>
+                    <li>Advanced customization</li>
+                    <li>Priority support</li>
+                </ul>
+                <button onclick="selectPlan('pro')" class="btn">Select Pro</button>
+            </div>
+        </div>
+        
+        <div id="paymentMessage" style="display: none; background: #d4edda; padding: 10px; margin: 20px 0;"></div>
+        
+        <script>
+            function selectPlan(plan) {
+                fetch('/create-payment', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({plan: plan})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.approval_url) {
+                        window.location.href = data.approval_url;
+                    } else {
+                        document.getElementById('paymentMessage').style.display = 'block';
+                        document.getElementById('paymentMessage').textContent = 'Payment setup failed';
+                        document.getElementById('paymentMessage').style.background = '#f8d7da';
+                    }
+                });
+            }
+        </script>
+        
+        <p><a href="/dashboard">Back to Dashboard</a></p>
+    </body>
+    </html>
+    '''
+
+@app.route('/create-payment', methods=['POST'])
+def create_payment():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'})
+    
+    plan = request.json.get('plan', 'starter')
+    
+    payment = paypalrestsdk.Payment({
+        "intent": "sale",
+        "payer": {"payment_method": "paypal"},
+        "redirect_urls": {
+            "return_url": url_for('payment_success', _external=True),
+            "cancel_url": url_for('payment_cancel', _external=True)
+        },
+        "transactions": [{
+            "amount": {
+                "total": "29.99" if plan == 'starter' else "59.99",
+                "currency": "USD"
             },
-            'users': users,
-            'business_info': business_info,
-            'statistics': get_user_stats()
-        }
+            "description": f"LeaX {plan.title()} Plan"
+        }]
+    })
     
-    return jsonify(data)
+    if payment.create():
+        session['payment_plan'] = plan
+        for link in payment.links:
+            if link.rel == "approval_url":
+                return jsonify({'approval_url': link.href})
+    
+    return jsonify({'error': 'Payment creation failed'})
 
-# ==================== USER MANAGEMENT ROUTES ====================
-@app.route('/user/profile')
-def user_profile():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+@app.route('/payment/success')
+def payment_success():
+    payment_id = request.args.get('paymentId')
+    payer_id = request.args.get('PayerID')
     
+    payment = paypalrestsdk.Payment.find(payment_id)
+    if payment.execute({"payer_id": payer_id}):
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('UPDATE users SET status = ?, plan_type = ? WHERE id = ?', 
+                     ('active', session.get('payment_plan', 'starter'), session['user_id']))
+            conn.commit()
+        
+        send_email(
+            "LeaX Payment Received",
+            f"Payment received from: {session.get('email')}\nPlan: {session.get('payment_plan')}\nAmount: ${'29.99' if session.get('payment_plan') == 'starter' else '59.99'}"
+        )
+        
+        flash('Payment successful! Your AI agent is now active.')
+        return redirect(url_for('dashboard'))
+    
+    flash('Payment failed')
+    return redirect(url_for('pricing'))
+
+@app.route('/payment/cancel')
+def payment_cancel():
+    flash('Payment was cancelled')
+    return redirect(url_for('pricing'))
+
+# ==================== ADMIN ====================
+@app.route('/admin')
+def admin():
     with get_db() as conn:
         c = conn.cursor()
-        c.execute('''
-            SELECT u.*, b.* 
-            FROM users u 
-            LEFT JOIN business_info b ON u.id = b.user_id 
-            WHERE u.id = ?
-        ''', (session['user_id'],))
-        user_data = c.fetchone()
+        c.execute('SELECT COUNT(*) as total_users FROM users')
+        total_users = c.fetchone()['total_users']
+        
+        c.execute('SELECT COUNT(*) as paid_users FROM users WHERE status != "trial"')
+        paid_users = c.fetchone()['paid_users']
+        
+        c.execute('SELECT * FROM users ORDER BY created_at DESC LIMIT 10')
+        recent_users = [dict(row) for row in c.fetchall()]
     
-    return render_template('profile.html', user=dict(user_data))
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>LeaX Admin</title>
+        <style>
+            body {{ font-family: Arial; margin: 20px; }}
+            .stats {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin: 20px 0; }}
+            .stat-card {{ background: #f5f5f5; padding: 20px; border-radius: 8px; text-align: center; }}
+            .stat-number {{ font-size: 2em; font-weight: bold; }}
+            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background: #f0f0f0; }}
+        </style>
+    </head>
+    <body>
+        <h1>LeaX Platform Admin</h1>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">{total_users}</div>
+                <div>Total Users</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{paid_users}</div>
+                <div>Paid Users</div>
+            </div>
+        </div>
 
-@app.route('/user/export-my-data')
-def export_my_data():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+        <h2>Recent Users</h2>
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Email</th>
+                <th>Business</th>
+                <th>Plan</th>
+                <th>Joined</th>
+            </tr>
+            {"".join(f'''
+            <tr>
+                <td>{user['id']}</td>
+                <td>{user['email']}</td>
+                <td>{user['business_name']}</td>
+                <td>{user['plan_type']}</td>
+                <td>{user['created_at']}</td>
+            </tr>
+            ''' for user in recent_users)}
+        </table>
+
+        <p><a href="/">Back to Site</a></p>
+    </body>
+    </html>
+    '''
+
+# ==================== AI AGENT ENDPOINT ====================
+@app.route('/agent/<user_id>', methods=['POST'])
+def ai_agent(user_id):
+    """Live AI agent endpoint for paying customers"""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM users WHERE id = ? AND status != "trial"', (user_id,))
+        user = c.fetchone()
+        
+        if not user:
+            return "Agent not active", 404
+        
+        c.execute('SELECT * FROM business_info WHERE user_id = ?', (user_id,))
+        business = c.fetchone()
     
-    user_data = export_user_data(session['user_id'])
-    return jsonify(user_data)
+    # Handle SMS
+    if "SmsMessageSid" in request.form:
+        incoming_msg = request.form.get('Body', '').strip()
+        
+        business_context = f"""
+BUSINESS: {user['business_name']}
+WEBSITE: {business['website_url'] if business else ''}
+CUSTOM INFO: {business['custom_info'] if business else ''}
+PERSONALITY: {business['agent_personality'] if business else 'friendly'}
+"""
+        
+        prompt = f"""
+You are a {business['agent_personality'] if business else 'friendly'} sales assistant.
 
-# [Include all the other routes from previous version: customize, test, payment, etc.]
-# ... (Include all the routes from the previous version)
+{business_context}
+
+Customer Message: {incoming_msg}
+
+Your response (be human, 1-2 sentences):
+"""
+        
+        try:
+            completion = openai.ChatCompletion.create(
+                model="gpt-4" if user['plan_type'] == 'pro' else "gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.8,
+                max_tokens=150
+            )
+            ai_reply = completion.choices[0].message.content
+            
+            # Log conversation
+            c.execute('''
+                INSERT INTO conversations (user_id, phone_number, message_text, response_text, message_direction)
+                VALUES (?, ?, ?, ?, 'incoming')
+            ''', (user_id, request.form.get('From'), incoming_msg, ai_reply))
+            conn.commit()
+            
+        except Exception as e:
+            ai_reply = "Thanks for your message! We'll get back to you soon."
+        
+        resp = MessagingResponse()
+        resp.message(ai_reply)
+        return str(resp)
+    
+    # Handle Voice
+    else:
+        resp = VoiceResponse()
+        resp.say(f"Thanks for calling {user['business_name']}! Text us at this number and we'll help you right away!")
+        return str(resp)
 
 if __name__ == '__main__':
-    # Log startup information
     logging.basicConfig(level=logging.INFO)
     logging.info(f"LeaX Platform Starting - Database: {DATABASE_FILE}")
-    
-    stats = get_user_stats()
-    logging.info(f"System Stats: {stats}")
     
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
