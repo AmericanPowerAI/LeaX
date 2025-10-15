@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login - LeaX</title>
+    <style>
+        body { font-family: Arial; max-width: 400px; margin: 100px auto; padding: 20px; }
+        .form-group { margin: 20px 0; }
+        input { width: 100%; padding: 10px; margin: 5px 0; }
+        button { background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; }
+        .alert { background: #f8d7da; color: #721c24; padding: 10px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h2>Login to LeaX</h2>
+    
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="alert">{{ messages[0] }}</div>
+        {% endif %}
+    {% endwith %}
+    
+    <form method="POST">
+        <div class="form-group">
+            <input type="email" name="email" placeholder="Email" required>
+        </div>
+        <div class="form-group">
+            <input type="password" name="password" placeholder="Password" required>
+        </div>
+        <button type="submit">Login</button>
+    </form>
+    
+    <p>Don't have an account? <a href="/">Sign up here</a></p>
+</body>
+</html>
