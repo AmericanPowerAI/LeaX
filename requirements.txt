@@ -1,0 +1,6 @@
+flask==2.3.3
+twilio==8.10.0
+openai==0.28.1
+requests==2.31.0
+beautifulsoup4==4.12.2
+paypalrestsdk==1.13.1
