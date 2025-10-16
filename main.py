@@ -17,6 +17,7 @@ import hashlib
 import secrets
 import logging
 from contextlib import contextmanager
+import re
 
 # 🆕 IMPORT MEMORY MANAGER
 from memory_manager import MemoryManager
@@ -40,7 +41,7 @@ EMAIL_TO = os.environ.get('EMAIL_TO', 'hr@americanpower.us')
 SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.office365.com')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
 SMTP_USERNAME = os.environ.get('SMTP_USERNAME')
-SMTP_PASSWORD = os.environ.get('EMAIL_PASSWORD')  # Updated to match your variable
+SMTP_PASSWORD = os.environ.get('EMAIL_PASSWORD')
 
 # Database Configuration
 DATABASE_FILE = os.environ.get('DATABASE_FILE', 'leax_users.db')
@@ -263,6 +264,74 @@ init_database()
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
+def normalize_url(url):
+    """Add https:// if missing"""
+    if not url:
+        return url
+    url = url.strip()
+    if not url.startswith(('http://', 'https://')):
+        url = 'https://' + url
+    return url
+
+def scrape_website_info(url):
+    """Scrape website to get business info"""
+    try:
+        url = normalize_url(url)
+        response = requests.get(url, timeout=10, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Get text content
+        text_content = soup.get_text(separator=' ', strip=True)
+        
+        # Extract key info
+        info = {
+            'title': soup.title.string if soup.title else '',
+            'description': '',
+            'content_summary': text_content[:1000] if text_content else ''
+        }
+        
+        # Get meta description
+        meta_desc = soup.find('meta', attrs={'name': 'description'})
+        if meta_desc:
+            info['description'] = meta_desc.get('content', '')
+        
+        return info
+    except Exception as e:
+        print(f"Website scrape error: {e}")
+        return None
+
+def generate_example_prompts(business_name, custom_info):
+    """Generate personalized example prompts based on business"""
+    try:
+        prompt = f"""Based on this business info, generate 3 SHORT (5-8 words) example customer questions:
+
+Business: {business_name}
+Info: {custom_info or 'General service provider'}
+
+Return ONLY a JSON array of 3 strings, like:
+["Question 1", "Question 2", "Question 3"]
+
+Keep questions natural and relevant to their business."""
+
+        completion = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=100
+        )
+        
+        examples = json.loads(completion.choices[0].message.content)
+        return examples[:3]
+    except:
+        # Fallback examples
+        return [
+            "What are your hours?",
+            "How much do you charge?",
+            "Are you available today?"
+        ]
+
 def analyze_customer_intent(message):
     """Analyze customer message to extract key information"""
     prompt = f"""
@@ -415,12 +484,9 @@ def update_lead_conversation(lead_id, user_id, message_text, response_text, inte
         
         return {'lead_id': lead_id}
 
-# ==================== 🔥 FIXED AI PROMPT - SOUNDS HUMAN ====================
+# ==================== 🔥 AI PROMPT WITH WEBSITE CONTEXT ====================
 def generate_human_response(business_name, business_context, customer_message, conversation_history=""):
-    """
-    Generate HUMAN-SOUNDING responses that CLOSE SALES
-    This is the KEY to making money - AI sounds like a real person!
-    """
+    """Generate HUMAN-SOUNDING responses with website context"""
     
     prompt = f"""You are Sarah, a friendly team member at {business_name}. You answer texts/calls like a real person would.
 
@@ -443,31 +509,18 @@ CONVERSATION SO FAR:
 CURRENT CUSTOMER MESSAGE:
 "{customer_message}"
 
-NOW RESPOND LIKE A REAL HUMAN WHO WANTS TO CLOSE THIS DEAL:
-
-EXAMPLES OF GOOD RESPONSES:
-Customer: "I need 10 fixtures and end caps built how fast can you get it done?"
-YOU: "Hey! I can get 10 fixtures with end caps done for you. When do you need them by? We usually do custom builds like this in 3-5 days. What's your project timeline and location?"
-
-Customer: "Do you do electrical work?"
-YOU: "Yes we do! What kind of electrical work are you looking for? New installation, repairs, or upgrades? And where's the job located?"
-
-Customer: "How much for a service call?"
-YOU: "Service calls are $125 which covers the first hour. What's going on that you need looked at? I can give you a better quote once I know what we're dealing with."
-
-NOW RESPOND TO THE CUSTOMER ABOVE (2-3 sentences max, sound HUMAN):"""
+NOW RESPOND LIKE A REAL HUMAN WHO WANTS TO CLOSE THIS DEAL (2-3 sentences max):"""
     
     try:
         completion = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.8,  # Higher for more human-like variation
+            temperature=0.8,
             max_tokens=150
         )
         return completion.choices[0].message.content, completion['usage']['total_tokens']
     except Exception as e:
         print(f"AI Error: {e}")
-        # Fallback response that still sounds human
         return f"Hey! Thanks for reaching out to {business_name}. Can you tell me more about what you need? That way I can give you accurate pricing and timing.", 0
 
 # ==================== LANDING PAGE ====================
@@ -546,18 +599,31 @@ def login():
         <title>Login - LeaX</title>
         <style>
             body { font-family: Arial; max-width: 400px; margin: 100px auto; padding: 20px; }
-            input { width: 100%; padding: 10px; margin: 10px 0; }
+            input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; }
             button { background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; width: 100%; }
+            .flash { background: #f8d7da; color: #721c24; padding: 10px; margin: 10px 0; border-radius: 5px; }
+            .toggle-password { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; }
+            .password-wrapper { position: relative; }
         </style>
     </head>
     <body>
         <h2>Login to LeaX</h2>
         <form method="POST">
             <input type="email" name="email" placeholder="Email" required>
-            <input type="password" name="password" placeholder="Password" required>
+            <div class="password-wrapper">
+                <input type="password" id="password" name="password" placeholder="Password" required>
+                <span class="toggle-password" onclick="togglePassword()">👁️</span>
+            </div>
             <button type="submit">Login</button>
         </form>
         <p><a href="/register">Sign up</a></p>
+        
+        <script>
+            function togglePassword() {
+                const pw = document.getElementById('password');
+                pw.type = pw.type === 'password' ? 'text' : 'password';
+            }
+        </script>
     </body>
     </html>
     '''
@@ -572,19 +638,75 @@ def register():
             <title>Register - LeaX</title>
             <style>
                 body { font-family: Arial; max-width: 400px; margin: 100px auto; padding: 20px; }
-                input { width: 100%; padding: 10px; margin: 10px 0; }
+                input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; }
                 button { background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; width: 100%; }
+                button:disabled { background: #ccc; cursor: not-allowed; }
+                .password-strength { height: 5px; margin: 5px 0; border-radius: 3px; background: #ddd; }
+                .password-strength.weak { background: #dc3545; }
+                .password-strength.medium { background: #ffc107; }
+                .password-strength.strong { background: #28a745; }
+                .toggle-password { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; }
+                .password-wrapper { position: relative; }
+                .hint { font-size: 12px; color: #666; margin: 5px 0; }
             </style>
         </head>
         <body>
             <h2>Create LeaX Account</h2>
-            <form method="POST">
-                <input type="email" name="email" placeholder="Email" required>
+            <form method="POST" onsubmit="return validateForm()">
+                <input type="email" id="email" name="email" placeholder="Email" required>
+                <div class="hint" id="emailHint"></div>
+                
                 <input type="text" name="business_name" placeholder="Business Name" required>
-                <input type="password" name="password" placeholder="Password" required>
-                <button type="submit">Create Account</button>
+                
+                <div class="password-wrapper">
+                    <input type="password" id="password" name="password" placeholder="Password (min 8 characters)" required minlength="8" oninput="checkPasswordStrength()">
+                    <span class="toggle-password" onclick="togglePassword()">👁️</span>
+                </div>
+                <div class="password-strength" id="strengthBar"></div>
+                <div class="hint" id="strengthText"></div>
+                
+                <button type="submit" id="submitBtn">Create Account</button>
             </form>
             <p><a href="/login">Login</a></p>
+            
+            <script>
+                function togglePassword() {
+                    const pw = document.getElementById('password');
+                    pw.type = pw.type === 'password' ? 'text' : 'password';
+                }
+                
+                function checkPasswordStrength() {
+                    const pw = document.getElementById('password').value;
+                    const bar = document.getElementById('strengthBar');
+                    const text = document.getElementById('strengthText');
+                    
+                    if (pw.length < 8) {
+                        bar.className = 'password-strength weak';
+                        text.textContent = 'Weak - add more characters';
+                        text.style.color = '#dc3545';
+                    } else if (pw.length < 12) {
+                        bar.className = 'password-strength medium';
+                        text.textContent = 'Medium - consider adding numbers/symbols';
+                        text.style.color = '#ffc107';
+                    } else {
+                        bar.className = 'password-strength strong';
+                        text.textContent = 'Strong password!';
+                        text.style.color = '#28a745';
+                    }
+                }
+                
+                function validateForm() {
+                    const email = document.getElementById('email').value;
+                    const password = document.getElementById('password').value;
+                    
+                    if (password.length < 8) {
+                        alert('Password must be at least 8 characters');
+                        return false;
+                    }
+                    
+                    return true;
+                }
+            </script>
         </body>
         </html>
         '''
@@ -593,6 +715,10 @@ def register():
         email = request.form.get('email')
         business_name = request.form.get('business_name')
         password = request.form.get('password')
+        
+        if len(password) < 8:
+            flash('Password must be at least 8 characters')
+            return redirect(url_for('register'))
         
         try:
             with get_db() as conn:
@@ -663,6 +789,57 @@ def dashboard():
     user_dict = dict(user) if user else {}
     lead_stats_dict = dict(lead_stats) if lead_stats else {}
     
+    # Show onboarding for new users
+    total_activity = analytics['total_conversations'] if analytics else 0
+    show_onboarding = total_activity == 0
+    
+    if show_onboarding:
+        return f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Welcome - LeaX</title>
+            <style>
+                body {{ font-family: Arial; max-width: 800px; margin: 40px auto; padding: 20px; }}
+                .welcome-card {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px; border-radius: 15px; text-align: center; margin: 20px 0; }}
+                .step-card {{ background: #f8f9fa; padding: 25px; margin: 15px 0; border-radius: 10px; border-left: 5px solid #007cba; }}
+                .btn {{ background: #007cba; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 10px; }}
+                .step-number {{ background: #007cba; color: white; width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px; }}
+            </style>
+        </head>
+        <body>
+            <div class="welcome-card">
+                <h1>🎉 Welcome to LeaX, {session['business_name']}!</h1>
+                <p>Let's get your AI agent set up in 3 easy steps</p>
+            </div>
+            
+            <div class="step-card">
+                <span class="step-number">1</span>
+                <strong>Tell us about your business</strong>
+                <p>Add your website and services so your AI knows what to say</p>
+                <a href="/customize" class="btn">Customize Your Agent →</a>
+            </div>
+            
+            <div class="step-card">
+                <span class="step-number">2</span>
+                <strong>Test how it sounds</strong>
+                <p>Chat with your AI to see how it responds to customers</p>
+                <a href="/test-agent" class="btn">Test Your Agent →</a>
+            </div>
+            
+            <div class="step-card">
+                <span class="step-number">3</span>
+                <strong>Watch the leads come in</strong>
+                <p>Once you're happy, activate it and start capturing leads 24/7</p>
+            </div>
+            
+            <p style="text-align: center; margin-top: 40px;">
+                <a href="/logout">Logout</a>
+            </p>
+        </body>
+        </html>
+        '''
+    
     return f'''
     <!DOCTYPE html>
     <html>
@@ -675,10 +852,13 @@ def dashboard():
             .stats-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin: 20px 0; }}
             .stat-card {{ background: white; padding: 20px; border-radius: 8px; text-align: center; border-left: 4px solid #007cba; }}
             .stat-number {{ font-size: 2em; font-weight: bold; color: #007cba; }}
+            .trial-badge {{ background: #ffc107; color: #000; padding: 10px 20px; border-radius: 20px; display: inline-block; margin: 10px 0; }}
         </style>
     </head>
     <body>
         <h1>Welcome, {session['business_name']}!</h1>
+        
+        {f'<div class="trial-badge">🎁 Trial: {3 - user_dict.get("trial_uses", 0)} tests remaining</div>' if user_dict.get('status') == 'trial' else ''}
         
         <div class="stats-grid">
             <div class="stat-card">
@@ -703,7 +883,6 @@ def dashboard():
             <h3>Your Account</h3>
             <p><strong>Plan:</strong> {user_dict.get('plan_type', 'Starter')}</p>
             <p><strong>Status:</strong> {user_dict.get('status', 'Active')}</p>
-            <p><strong>Trial Uses:</strong> {user_dict.get('trial_uses', 0)}/3</p>
         </div>
         
         <div class="card">
@@ -711,7 +890,7 @@ def dashboard():
             <a href="/customize" class="btn">Customize Agent</a>
             <a href="/test-agent" class="btn">Test Agent</a>
             <a href="/leads" class="btn">View Leads</a>
-            <a href="/analytics" class="btn">Analytics</a>
+            {f'<a href="/analytics" class="btn">Analytics</a>' if total_activity > 0 else ''}
             <a href="/pricing" class="btn">Upgrade</a>
         </div>
         
@@ -726,61 +905,124 @@ def customize_agent():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    return '''
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
+        business = c.fetchone()
+    
+    existing_url = business['website_url'] if business else ''
+    existing_info = business['custom_info'] if business else ''
+    
+    return f'''
     <!DOCTYPE html>
     <html>
     <head>
         <title>Customize Agent</title>
         <style>
-            body { font-family: Arial; max-width: 600px; margin: 40px auto; padding: 20px; }
-            input, textarea, select { width: 100%; padding: 10px; margin: 10px 0; }
-            button { background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; width: 100%; }
-            .message { display: none; padding: 10px; margin: 10px 0; border-radius: 5px; }
-            .success { background: #d4edda; color: #155724; }
+            body {{ font-family: Arial; max-width: 900px; margin: 40px auto; padding: 20px; }}
+            .container {{ display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }}
+            .form-section {{ background: #f8f9fa; padding: 30px; border-radius: 10px; }}
+            .preview-section {{ background: #fff; padding: 30px; border-radius: 10px; border: 2px solid #e2e8f0; }}
+            input, textarea, select {{ width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; border: 2px solid #e2e8f0; border-radius: 5px; }}
+            button {{ background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; width: 100%; border-radius: 5px; margin-top: 10px; }}
+            button:disabled {{ background: #ccc; }}
+            .message {{ display: none; padding: 10px; margin: 10px 0; border-radius: 5px; }}
+            .success {{ background: #d4edda; color: #155724; display: block; }}
+            .info-banner {{ background: #cfe2ff; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #0d6efd; }}
+            .preview-message {{ background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 10px; border-left: 4px solid #007cba; }}
+            h3 {{ margin-top: 0; }}
+            @media (max-width: 768px) {{
+                .container {{ grid-template-columns: 1fr; }}
+            }}
         </style>
     </head>
     <body>
         <h2>Customize Your AI Agent</h2>
         
+        <div class="info-banner">
+            💡 <strong>Your AI learns from your website!</strong> Add your URL and we'll automatically understand your services.
+        </div>
+        
         <div id="message" class="message"></div>
         
-        <form id="customizeForm">
-            <h3>Business Information</h3>
-            <input type="url" id="website_url" placeholder="Your website URL (optional)">
-            <textarea id="custom_info" placeholder="Tell us about your business, services, pricing..." rows="6"></textarea>
+        <div class="container">
+            <div class="form-section">
+                <h3>Business Information</h3>
+                <form id="customizeForm">
+                    <label><strong>Website URL</strong></label>
+                    <input type="text" id="website_url" placeholder="example.com (we'll add https://)" value="{existing_url}">
+                    <small style="color: #666;">No need to type https:// - we'll add it!</small>
+                    
+                    <label style="margin-top: 20px; display: block;"><strong>About Your Business</strong></label>
+                    <textarea id="custom_info" placeholder="Tell us about your services, pricing, hours..." rows="6">{existing_info}</textarea>
+                    
+                    <label><strong>Agent Name</strong></label>
+                    <input type="text" id="agent_name" placeholder="e.g., Sarah, Mike, etc." value="Sarah">
+                    <small style="color: #666;">Give your AI a human name</small>
+                    
+                    <button type="submit" id="saveBtn">Save & Preview</button>
+                </form>
+            </div>
             
-            <h3>Agent Name (sounds more human)</h3>
-            <input type="text" id="agent_name" placeholder="e.g., Sarah, Mike, etc." value="Sarah">
-            
-            <button type="submit">Save</button>
-        </form>
+            <div class="preview-section">
+                <h3>Preview: How Your AI Will Respond</h3>
+                <div id="previewArea">
+                    <p style="color: #999;">Fill out the form and click "Save & Preview" to see how your AI will sound!</p>
+                </div>
+            </div>
+        </div>
+        
+        <p style="text-align: center; margin-top: 30px;"><a href="/dashboard">← Back to Dashboard</a></p>
         
         <script>
-            document.getElementById('customizeForm').addEventListener('submit', function(e) {
+            document.getElementById('customizeForm').addEventListener('submit', function(e) {{
                 e.preventDefault();
                 
-                const data = {
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+                
+                const data = {{
                     website_url: document.getElementById('website_url').value,
                     custom_info: document.getElementById('custom_info').value,
                     agent_name: document.getElementById('agent_name').value
-                };
+                }};
                 
-                fetch('/api/save-customization', {
+                fetch('/api/save-customization', {{
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify(data)
-                })
+                }})
                 .then(response => response.json())
-                .then(result => {
+                .then(result => {{
                     const message = document.getElementById('message');
-                    message.style.display = 'block';
                     message.className = 'message success';
-                    message.textContent = 'Saved!';
-                });
-            });
+                    message.textContent = '✅ Saved! Check the preview →';
+                    
+                    // Show preview
+                    const preview = document.getElementById('previewArea');
+                    preview.innerHTML = `
+                        <div class="preview-message">
+                            <strong>Customer:</strong> "Do you do electrical work?"<br><br>
+                            <strong>${{data.agent_name}}:</strong> "${{result.preview}}"
+                        </div>
+                        <p style="margin-top: 20px;">
+                            <a href="/test-agent" style="background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                                Test Live Chat →
+                            </a>
+                        </p>
+                    `;
+                    
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save & Preview';
+                }})
+                .catch(error => {{
+                    alert('Error saving. Please try again.');
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save & Preview';
+                }});
+            }});
         </script>
-        
-        <p><a href="/dashboard">Back to Dashboard</a></p>
     </body>
     </html>
     '''
@@ -791,6 +1033,18 @@ def save_customization():
         return jsonify({'error': 'Not logged in'})
     
     data = request.json
+    website_url = normalize_url(data.get('website_url', ''))
+    custom_info = data.get('custom_info', '')
+    
+    # Scrape website if URL provided
+    website_context = ""
+    if website_url:
+        scraped = scrape_website_info(website_url)
+        if scraped:
+            website_context = f"\nWebsite: {scraped['title']}\n{scraped['description']}\n{scraped['content_summary']}"
+    
+    # Combine custom info with website context
+    full_context = custom_info + website_context
     
     with get_db() as conn:
         c = conn.cursor()
@@ -798,17 +1052,30 @@ def save_customization():
             INSERT OR REPLACE INTO business_info 
             (user_id, website_url, custom_info, agent_personality) 
             VALUES (?, ?, ?, ?)
-        ''', (session['user_id'], data.get('website_url'), 
-              data.get('custom_info'), data.get('agent_name', 'Sarah')))
+        ''', (session['user_id'], website_url, full_context, data.get('agent_name', 'Sarah')))
         conn.commit()
     
     memory_mgr.update_business_profile(session['user_id'], {
-        'website_url': data.get('website_url'),
-        'custom_info': data.get('custom_info'),
+        'website_url': website_url,
+        'custom_info': full_context,
         'personality': data.get('agent_name', 'Sarah')
     })
     
-    return jsonify({'success': True})
+    # Generate preview response
+    business_context = f"""
+Business: {session.get('business_name')}
+Services: {full_context or 'Full service provider'}
+Website: {website_url or 'Not provided'}
+"""
+    
+    preview_response, _ = generate_human_response(
+        session.get('business_name'),
+        business_context,
+        "Do you do electrical work?",
+        ""
+    )
+    
+    return jsonify({'success': True, 'preview': preview_response})
 
 # ==================== TEST AGENT ====================
 @app.route('/test-agent')
@@ -818,16 +1085,30 @@ def test_agent():
     
     with get_db() as conn:
         c = conn.cursor()
-        c.execute('SELECT trial_uses, max_trial_uses FROM users WHERE id = ?', (session['user_id'],))
+        c.execute('SELECT trial_uses, max_trial_uses, status FROM users WHERE id = ?', (session['user_id'],))
         user = c.fetchone()
         
-        if user['trial_uses'] >= user['max_trial_uses']:
+        if user['status'] == 'trial' and user['trial_uses'] >= user['max_trial_uses']:
+            flash('Trial tests used up! Upgrade to continue.')
             return redirect(url_for('pricing'))
         
-        c.execute('UPDATE users SET trial_uses = trial_uses + 1 WHERE id = ?', (session['user_id'],))
-        conn.commit()
+        if user['status'] == 'trial':
+            c.execute('UPDATE users SET trial_uses = trial_uses + 1 WHERE id = ?', (session['user_id'],))
+            conn.commit()
+        
+        # Get business info for examples
+        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
+        business = c.fetchone()
     
-    return render_template('test_agent_modern.html')
+    # Generate personalized examples
+    examples = generate_example_prompts(
+        session.get('business_name'),
+        business['custom_info'] if business else None
+    )
+    
+    return render_template('test_agent_modern.html', 
+                         examples=examples,
+                         trials_remaining=3 - user['trial_uses'] if user['status'] == 'trial' else None)
 
 @app.route('/api/test-chat', methods=['POST'])
 def test_chat():
@@ -1004,27 +1285,6 @@ Website: {business['website_url'] if business and business['website_url'] else '
         from_number = request.form.get('From', '')
         to_number = request.form.get('To', '')
         
-        # Get conversation history for context
-        conversation_context = memory_mgr.get_conversation_context(
-            user_id, 
-            from_number,
-            last_n_messages=5
-        )
-        
-        business_context = f"""
-Business: {user['business_name']}
-Services: {business['custom_info'] if business and business['custom_info'] else 'Full service provider'}
-"""
-        
-        # Generate greeting for voice call
-        greeting, tokens = generate_human_response(
-            user['business_name'],
-            business_context,
-            "Incoming phone call - greet them professionally",
-            conversation_context
-        )
-        
-        # Log call to memory
         memory_mgr.log_conversation(user_id, {
             'type': 'call',
             'direction': 'inbound',
@@ -1038,15 +1298,12 @@ Services: {business['custom_info'] if business and business['custom_info'] else 
         })
         
         resp = VoiceResponse()
-        
-        # Answer with human-like greeting
         resp.say(
-            f"Hi! You've reached {user['business_name']}. For fastest service, please text us at this number and we'll get right back to you with pricing and availability. Or stay on the line and we'll connect you shortly.",
+            f"Hi! You've reached {user['business_name']}. For fastest service, please text us at this number and we'll get right back to you with pricing and availability.",
             voice='alice',
             language='en-US'
         )
         
-        # Gather input if they want to leave a message
         gather = Gather(num_digits=1, action=f'/agent/{user_id}/voice-menu', method='POST')
         gather.say('Press 1 to leave a message, or press 2 to text us instead.', voice='alice')
         resp.append(gather)
@@ -1057,6 +1314,7 @@ Services: {business['custom_info'] if business and business['custom_info'] else 
 def voice_menu(user_id):
     """Handle voice call menu"""
     digit = request.form.get('Digits', '')
+    to_number = request.form.get('To', '')
     
     resp = VoiceResponse()
     
@@ -1064,8 +1322,7 @@ def voice_menu(user_id):
         resp.say('Please leave your message after the beep, and we will call you back shortly.', voice='alice')
         resp.record(max_length=60, action=f'/agent/{user_id}/voicemail', method='POST')
     elif digit == '2':
-        from_number = request.form.get('From', '')
-        resp.say(f'Great! Text this number and we will respond right away. The number again is {to_number}. Thanks!', voice='alice')
+        resp.say(f'Great! Text this number and we will respond right away. Thanks!', voice='alice')
     else:
         resp.say('Sorry, I did not get that. Please call back or text us. Goodbye!', voice='alice')
     
@@ -1078,7 +1335,6 @@ def handle_voicemail(user_id):
     recording_url = request.form.get('RecordingUrl', '')
     from_number = request.form.get('From', '')
     
-    # Send email notification about voicemail
     with get_db() as conn:
         c = conn.cursor()
         c.execute('SELECT * FROM users WHERE id = ?', (user_id,))
@@ -1105,22 +1361,57 @@ def view_leads():
     with get_db() as conn:
         c = conn.cursor()
         c.execute('''
-            SELECT * FROM leads 
-            WHERE user_id = ? 
-            ORDER BY lead_score DESC, last_contact DESC
+            SELECT l.*, 
+                   (SELECT COUNT(*) FROM lead_conversations lc WHERE lc.lead_id = l.id) as message_count
+            FROM leads l
+            WHERE l.user_id = ? 
+            ORDER BY l.lead_score DESC, l.last_contact DESC
             LIMIT 50
         ''', (session['user_id'],))
         leads = [dict(row) for row in c.fetchall()]
+    
+    if not leads:
+        return f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Leads</title>
+            <style>
+                body {{ font-family: Arial; max-width: 800px; margin: 40px auto; padding: 20px; text-align: center; }}
+                .empty-state {{ background: #f8f9fa; padding: 60px 40px; border-radius: 15px; }}
+                .btn {{ background: #007cba; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 10px; }}
+            </style>
+        </head>
+        <body>
+            <div class="empty-state">
+                <h1>📋 No Leads Yet</h1>
+                <p>Test your agent to see how it captures leads!</p>
+                <a href="/test-agent" class="btn">Test Agent →</a>
+                <a href="/dashboard" class="btn">Dashboard</a>
+            </div>
+        </body>
+        </html>
+        '''
     
     leads_html = ""
     for lead in leads:
         score_color = "#dc3545" if lead['lead_score'] >= 70 else "#fd7e14" if lead['lead_score'] >= 50 else "#666"
         leads_html += f'''
-        <div style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid {score_color};">
-            <h3>📞 {lead['phone_number']} <span style="color: {score_color};">({lead['lead_score']}/100)</span></h3>
-            <p><strong>Project:</strong> {lead['project_type']}</p>
-            <p><strong>Urgency:</strong> {lead['urgency']}</p>
-            <p><strong>Status:</strong> {lead['status']}</p>
+        <div style="background: #f8f9fa; padding: 20px; margin: 15px 0; border-radius: 8px; border-left: 4px solid {score_color};">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                    <h3 style="margin: 0;">📞 {lead['phone_number']}</h3>
+                    <p style="color: {score_color}; font-weight: bold; margin: 5px 0;">Score: {lead['lead_score']}/100</p>
+                </div>
+                <div style="text-align: right;">
+                    <span style="background: {score_color}; color: white; padding: 5px 15px; border-radius: 20px; font-size: 12px;">
+                        {lead['status'].upper()}
+                    </span>
+                </div>
+            </div>
+            <p><strong>Project:</strong> {lead['project_type'] or 'Not specified'}</p>
+            <p><strong>Urgency:</strong> {lead['urgency'] or 'Not specified'}</p>
+            <p><strong>Messages:</strong> {lead['message_count']}</p>
             <p><strong>Last Contact:</strong> {lead['last_contact']}</p>
         </div>
         '''
@@ -1129,18 +1420,21 @@ def view_leads():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Leads</title>
+        <title>Leads - LeaX</title>
         <style>
             body {{ font-family: Arial; max-width: 1000px; margin: 40px auto; padding: 20px; }}
+            .header {{ display: flex; justify-content: space-between; align-items: center; }}
+            .btn {{ background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }}
         </style>
     </head>
     <body>
-        <h1>Your Leads - {session['business_name']}</h1>
-        <p>Total: {len(leads)}</p>
+        <div class="header">
+            <h1>Your Leads - {session['business_name']}</h1>
+            <a href="/dashboard" class="btn">← Dashboard</a>
+        </div>
+        <p><strong>Total:</strong> {len(leads)} leads</p>
         
-        {leads_html if leads else '<p>No leads yet. Test your agent to see it in action!</p>'}
-        
-        <p><a href="/dashboard">Back to Dashboard</a></p>
+        {leads_html}
     </body>
     </html>
     '''
@@ -1153,6 +1447,31 @@ def analytics():
     
     analytics_data = memory_mgr.get_customer_analytics(session['user_id'])
     memory = memory_mgr.load_customer_memory(session['user_id'])
+    
+    # Only show if they have data
+    if not analytics_data or analytics_data['total_conversations'] == 0:
+        return f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Analytics</title>
+            <style>
+                body {{ font-family: Arial; max-width: 800px; margin: 40px auto; padding: 20px; text-align: center; }}
+                .empty-state {{ background: #f8f9fa; padding: 60px 40px; border-radius: 15px; }}
+                .btn {{ background: #007cba; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 10px; }}
+            </style>
+        </head>
+        <body>
+            <div class="empty-state">
+                <h1>📊 No Analytics Yet</h1>
+                <p>Start chatting with your agent to see analytics!</p>
+                <a href="/test-agent" class="btn">Test Agent →</a>
+                <a href="/dashboard" class="btn">Dashboard</a>
+            </div>
+        </body>
+        </html>
+        '''
+    
     recent_convos = memory['conversation_history'][-20:] if memory else []
     
     return f'''
@@ -1166,10 +1485,14 @@ def analytics():
             .stat-card {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }}
             .stat-number {{ font-size: 2.5em; font-weight: bold; color: #007cba; }}
             .activity-log {{ background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; }}
+            .btn {{ background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }}
         </style>
     </head>
     <body>
-        <h1>Analytics - {session['business_name']}</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>Analytics - {session['business_name']}</h1>
+            <a href="/dashboard" class="btn">← Dashboard</a>
+        </div>
         
         <div class="stats-grid">
             <div class="stat-card">
@@ -1199,8 +1522,6 @@ def analytics():
             <em>{convo.get('content', 'N/A')[:100]}...</em>
         </div>
         ''' for convo in recent_convos])}
-        
-        <p><a href="/dashboard">Back to Dashboard</a></p>
     </body>
     </html>
     '''
@@ -1341,5 +1662,6 @@ if __name__ == '__main__':
     logging.info(f"🚀 LeaX Starting - Database: {DATABASE_FILE}")
     logging.info(f"✅ Memory Manager Initialized")
     logging.info(f"✅ HUMAN AI Responses Active")
+    logging.info(f"✅ Website Scanning Enabled")
     
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
