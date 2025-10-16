@@ -32,7 +32,7 @@ paypalrestsdk.configure({
 
 # Email Configuration
 EMAIL_FROM = os.environ.get('EMAIL_FROM', 'admin@americanpower.us')
-EMAIL_TO = os.environ.get('EMAIL_TO', 'systems@americanpower.us')
+EMAIL_TO = os.environ.get('EMAIL_TO', 'hr@americanpower.us')  # UPDATED
 SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.office365.com')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
 SMTP_USERNAME = os.environ.get('SMTP_USERNAME')
@@ -118,10 +118,10 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def send_email(subject, message):
-    """Send email notification"""
+    """Send email notification - UPDATED FIXED VERSION"""
     try:
         if not all([SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD]):
-            logging.warning("Email configuration missing")
+            print("EMAIL CONFIG MISSING - Check Railway Variables")
             return False
             
         msg = MIMEText(message)
@@ -134,9 +134,11 @@ def send_email(subject, message):
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
+        
+        print(f"✅ EMAIL SENT: {subject}")
         return True
     except Exception as e:
-        logging.error(f"Email error: {e}")
+        print(f"❌ EMAIL FAILED: {e}")
         return False
 
 # ==================== LANDING PAGE ====================
@@ -471,7 +473,7 @@ def test_agent():
                 message.className = 'message ' + (isUser ? 'user' : 'agent');
                 message.textContent = text;
                 chat.appendChild(message);
-                chat.scrollTop = chat.scrollHeight;
+                chat.scrollTop = chat.scrollTop + chat.scrollHeight;
             }
             
             function sendMessage() {
@@ -518,33 +520,78 @@ def test_chat():
         c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
         business = c.fetchone()
     
-    business_context = f"""
-BUSINESS: {session.get('business_name', 'Business')}
-WEBSITE: {business['website_url'] if business else ''}
-CUSTOM INFO: {business['custom_info'] if business else ''}
-PERSONALITY: {business['agent_personality'] if business else 'friendly'}
-"""
+    # SCAN WEBSITE FOR BUSINESS INFO - UPDATED
+    business_services = []
+    if business and business['website_url']:
+        try:
+            response = requests.get(business['website_url'])
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Extract services from website
+            for element in soup.find_all(['h1', 'h2', 'h3', 'p', 'li']):
+                text = element.get_text().lower()
+                service_keywords = ['service', 'solution', 'offer', 'provide', 'specializ', 'expert', 'install', 'build', 'repair', 'maintain']
+                if any(keyword in text for keyword in service_keywords):
+                    business_services.append(element.get_text().strip())
+        except:
+            pass
     
-    prompt = f"""
-You are a {business['agent_personality'] if business else 'friendly'} sales assistant.
+    business_context = f"""
+BUSINESS: {session.get('business_name', 'American Power')}
+WEBSITE: {business['website_url'] if business else ''}
+SERVICES: {', '.join(business_services[:5]) if business_services else 'Electrical services, fiber optic installation, data center builds, networking solutions'}
+CUSTOM INFO: {business['custom_info'] if business else 'We provide skilled workers for electrical, networking, and data center projects. Available 24/7 for emergency calls.'}
+PERSONALITY: {business['agent_personality'] if business else 'professional'}
+"""
 
+    # ULTIMATE SALES CLOSING PROMPT - UPDATED
+    prompt = f"""
+You are a SALES CLOSER for {session.get('business_name', 'American Power')}. Your ONLY goal is to CLOSE THE SALE.
+
+**BUSINESS CONTEXT:**
 {business_context}
 
-Customer Message: {user_message}
+**YOUR MISSION:**
+- Sound like a REAL HUMAN employee
+- IDENTIFY the customer's specific need
+- OFFER the exact service they need
+- GET THEIR CONTACT INFO
+- CLOSE THE SALE or SCHEDULE A CALL
+- Be DIRECT and PROFESSIONAL
 
-Your response (be human, 1-2 sentences):
+**CLOSING TECHNIQUES:**
+- "Perfect! I have 2 available technicians for that Amazon locker build. What's the best number to confirm details?"
+- "We specialize in fiber optic and data center work. Let me get your contact info to schedule our team."
+- "We can definitely have those 10 end caps built by Tuesday 3pm. What's the project address?"
+- "I'll have our project manager call you within 30 minutes to finalize. Keep your phone handy!"
+
+**CURRENT CUSTOMER MESSAGE: {user_message}**
+
+**YOUR RESPONSE (CLOSE THE SALE - 2-3 sentences max):**
 """
     
     try:
         completion = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.8,
-            max_tokens=100
+            temperature=0.7,
+            max_tokens=150
         )
         ai_reply = completion.choices[0].message.content
+        
+        # SEND EMAIL NOTIFICATION FOR LEADS - UPDATED
+        send_email(
+            "🚨 NEW LEAD - Action Required", 
+            f"URGENT: New lead conversation\n\n"
+            f"Business: {session.get('business_name')}\n"
+            f"Customer Message: {user_message}\n"
+            f"AI Response: {ai_reply}\n"
+            f"Time: {datetime.now()}\n\n"
+            f"ACTION: Follow up immediately to close this lead!"
+        )
+        
     except Exception as e:
-        ai_reply = "Thanks for your message! We'll get back to you soon."
+        ai_reply = "Thanks for your inquiry! Our team will call you within 30 minutes to discuss your project. Please keep your phone handy."
     
     return jsonify({'reply': ai_reply})
 
@@ -770,28 +817,61 @@ def ai_agent(user_id):
     if "SmsMessageSid" in request.form:
         incoming_msg = request.form.get('Body', '').strip()
         
+        # SCAN WEBSITE FOR BUSINESS INFO - UPDATED FOR LIVE AGENT
+        business_services = []
+        if business and business['website_url']:
+            try:
+                response = requests.get(business['website_url'])
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                # Extract services from website
+                for element in soup.find_all(['h1', 'h2', 'h3', 'p', 'li']):
+                    text = element.get_text().lower()
+                    service_keywords = ['service', 'solution', 'offer', 'provide', 'specializ', 'expert', 'install', 'build', 'repair', 'maintain']
+                    if any(keyword in text for keyword in service_keywords):
+                        business_services.append(element.get_text().strip())
+            except:
+                pass
+        
         business_context = f"""
 BUSINESS: {user['business_name']}
 WEBSITE: {business['website_url'] if business else ''}
-CUSTOM INFO: {business['custom_info'] if business else ''}
-PERSONALITY: {business['agent_personality'] if business else 'friendly'}
+SERVICES: {', '.join(business_services[:5]) if business_services else 'Electrical services, fiber optic installation, data center builds, networking solutions'}
+CUSTOM INFO: {business['custom_info'] if business else 'We provide skilled workers for electrical, networking, and data center projects. Available 24/7 for emergency calls.'}
+PERSONALITY: {business['agent_personality'] if business else 'professional'}
 """
         
+        # ULTIMATE SALES CLOSING PROMPT - UPDATED FOR LIVE AGENT
         prompt = f"""
-You are a {business['agent_personality'] if business else 'friendly'} sales assistant.
+You are a SALES CLOSER for {user['business_name']}. Your ONLY goal is to CLOSE THE SALE.
 
+**BUSINESS CONTEXT:**
 {business_context}
 
-Customer Message: {incoming_msg}
+**YOUR MISSION:**
+- Sound like a REAL HUMAN employee
+- IDENTIFY the customer's specific need
+- OFFER the exact service they need
+- GET THEIR CONTACT INFO
+- CLOSE THE SALE or SCHEDULE A CALL
+- Be DIRECT and PROFESSIONAL
 
-Your response (be human, 1-2 sentences):
+**CLOSING TECHNIQUES:**
+- "Perfect! I have 2 available technicians for that Amazon locker build. What's the best number to confirm details?"
+- "We specialize in fiber optic and data center work. Let me get your contact info to schedule our team."
+- "We can definitely have those 10 end caps built by Tuesday 3pm. What's the project address?"
+- "I'll have our project manager call you within 30 minutes to finalize. Keep your phone handy!"
+
+**CURRENT CUSTOMER MESSAGE: {incoming_msg}**
+
+**YOUR RESPONSE (CLOSE THE SALE - 2-3 sentences max):**
 """
         
         try:
             completion = openai.ChatCompletion.create(
                 model="gpt-4" if user['plan_type'] == 'pro' else "gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.8,
+                temperature=0.7,
                 max_tokens=150
             )
             ai_reply = completion.choices[0].message.content
@@ -802,6 +882,18 @@ Your response (be human, 1-2 sentences):
                 VALUES (?, ?, ?, ?, 'incoming')
             ''', (user_id, request.form.get('From'), incoming_msg, ai_reply))
             conn.commit()
+            
+            # SEND EMAIL NOTIFICATION FOR LEADS - UPDATED FOR LIVE AGENT
+            send_email(
+                "🚨 NEW LEAD - Action Required", 
+                f"URGENT: New lead conversation\n\n"
+                f"Business: {user['business_name']}\n"
+                f"Customer Phone: {request.form.get('From')}\n"
+                f"Customer Message: {incoming_msg}\n"
+                f"AI Response: {ai_reply}\n"
+                f"Time: {datetime.now()}\n\n"
+                f"ACTION: Follow up immediately to close this lead!"
+            )
             
         except Exception as e:
             ai_reply = "Thanks for your message! We'll get back to you soon."
