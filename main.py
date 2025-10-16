@@ -18,6 +18,9 @@ import secrets
 import logging
 from contextlib import contextmanager
 
+# 🆕 IMPORT MEMORY MANAGER
+from memory_manager import MemoryManager
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET', 'leax-secret-key-2024')
 
@@ -37,12 +40,116 @@ EMAIL_TO = os.environ.get('EMAIL_TO', 'hr@americanpower.us')
 SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.office365.com')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
 SMTP_USERNAME = os.environ.get('SMTP_USERNAME')
-SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD')
+SMTP_PASSWORD = os.environ.get('EMAIL_PASSWORD')  # Updated to match your variable
 
 # Database Configuration
 DATABASE_FILE = os.environ.get('DATABASE_FILE', 'leax_users.db')
 
-# ==================== SCALABLE DATABASE SYSTEM ====================
+# 🆕 INITIALIZE MEMORY MANAGER
+memory_mgr = MemoryManager()
+
+# ==================== EMAIL NOTIFICATION SYSTEM ====================
+class EmailNotifier:
+    """Send comprehensive email notifications"""
+    
+    @staticmethod
+    def send_notification(subject, html_content, text_content):
+        """Send email notification"""
+        try:
+            if not all([SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD]):
+                print("⚠️ Email config missing")
+                return False
+            
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = EMAIL_FROM
+            msg['To'] = EMAIL_TO
+            
+            part1 = MIMEText(text_content, 'plain')
+            part2 = MIMEText(html_content, 'html')
+            
+            msg.attach(part1)
+            msg.attach(part2)
+            
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
+            server.quit()
+            
+            print(f"✅ Email sent: {subject}")
+            return True
+        except Exception as e:
+            print(f"❌ Email failed: {e}")
+            return False
+    
+    @staticmethod
+    def notify_new_signup(user_data):
+        """Notify about new customer signup"""
+        subject = f"🎉 NEW SIGNUP: {user_data['business_name']}"
+        
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial; margin: 20px;">
+            <div style="background: #28a745; color: white; padding: 20px; border-radius: 10px;">
+                <h1>🎉 NEW CUSTOMER SIGNUP!</h1>
+            </div>
+            <div style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px;">
+                <h3>Customer Details</h3>
+                <p><strong>Business Name:</strong> {user_data['business_name']}</p>
+                <p><strong>Email:</strong> {user_data['email']}</p>
+                <p><strong>User ID:</strong> {user_data['user_id']}</p>
+                <p><strong>Plan:</strong> {user_data.get('plan_type', 'trial')}</p>
+                <p><strong>Signup Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text = f"""
+NEW CUSTOMER SIGNUP
+==================
+Business: {user_data['business_name']}
+Email: {user_data['email']}
+User ID: {user_data['user_id']}
+        """
+        
+        return EmailNotifier.send_notification(subject, html, text)
+    
+    @staticmethod
+    def notify_conversation(user_data, conversation_data):
+        """Notify about every message/call"""
+        comm_type = conversation_data['type'].upper()
+        subject = f"💬 {comm_type}: {user_data['business_name']}"
+        
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial; margin: 20px;">
+            <div style="background: #007cba; color: white; padding: 20px; border-radius: 10px;">
+                <h1>💬 NEW {comm_type}</h1>
+            </div>
+            <div style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px;">
+                <h3>Customer: {user_data['business_name']}</h3>
+                <p><strong>From:</strong> {conversation_data['from_number']}</p>
+                <p><strong>Content:</strong> {conversation_data['content']}</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text = f"""
+NEW {comm_type}: {user_data['business_name']}
+From: {conversation_data['from_number']}
+Content: {conversation_data['content']}
+        """
+        
+        return EmailNotifier.send_notification(subject, html, text)
+
+email_notifier = EmailNotifier()
+
+# ==================== DATABASE ====================
 @contextmanager
 def get_db():
     """Database connection context manager"""
@@ -54,7 +161,7 @@ def get_db():
         conn.close()
 
 def init_database():
-    """Initialize database with comprehensive lead tracking"""
+    """Initialize database"""
     with get_db() as conn:
         c = conn.cursor()
         
@@ -106,7 +213,6 @@ def init_database():
             )
         ''')
         
-        # NEW: Comprehensive leads table
         c.execute('''
             CREATE TABLE IF NOT EXISTS leads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,7 +236,6 @@ def init_database():
             )
         ''')
         
-        # NEW: Lead conversations history
         c.execute('''
             CREATE TABLE IF NOT EXISTS lead_conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,10 +253,7 @@ def init_database():
         ''')
         
         c.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_business_info_user_id ON business_info(user_id)')
         c.execute('CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone_number)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status)')
         
         conn.commit()
 
@@ -202,7 +304,6 @@ def calculate_lead_score(intent_analysis, message_length, has_contact_info):
     """Calculate lead quality score"""
     score = 0
     
-    # Project type scoring
     project_scores = {
         "emergency": 90,
         "immediate": 80,
@@ -214,7 +315,6 @@ def calculate_lead_score(intent_analysis, message_length, has_contact_info):
     
     score += project_scores.get(intent_analysis.get('project_type', 'general_inquiry'), 30)
     
-    # Urgency scoring
     urgency_scores = {
         "immediate": 40,
         "this_week": 30,
@@ -224,13 +324,11 @@ def calculate_lead_score(intent_analysis, message_length, has_contact_info):
     
     score += urgency_scores.get(intent_analysis.get('urgency', 'flexible'), 10)
     
-    # Budget scoring
     if intent_analysis.get('potential_budget') in ['high', 'enterprise']:
         score += 20
     elif intent_analysis.get('potential_budget') == 'medium':
         score += 10
     
-    # Contact willingness
     if has_contact_info:
         score += 30
     elif intent_analysis.get('contact_willingness') == 'yes':
@@ -239,152 +337,73 @@ def calculate_lead_score(intent_analysis, message_length, has_contact_info):
     return min(score, 100)
 
 def send_comprehensive_lead_email(lead_data, conversation_history, business_info):
-    """Send detailed lead information with conversation context"""
+    """Send detailed lead information"""
     try:
         if not all([SMTP_SERVER, SMTP_USERNAME, SMTP_PASSWORD]):
-            print("EMAIL CONFIG MISSING - Check Railway Variables")
+            print("EMAIL CONFIG MISSING")
             return False
         
-        # Create HTML email
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f"🚨 HOT LEAD: {lead_data['project_type']} - {lead_data['business_name']}"
+        msg['Subject'] = f"🚨 HOT LEAD: {lead_data.get('project_type', 'New Lead')} - {business_info.get('business_name', 'N/A')}"
         msg['From'] = EMAIL_FROM
         msg['To'] = EMAIL_TO
         
-        # HTML content
         html = f"""
         <!DOCTYPE html>
         <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                .header {{ background: #dc3545; color: white; padding: 20px; border-radius: 10px; }}
-                .section {{ background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; }}
-                .urgent {{ background: #fff3cd; border-left: 4px solid #ffc107; }}
-                .conversation {{ background: white; border: 1px solid #ddd; }}
-                .customer {{ background: #e7f3ff; padding: 8px; margin: 5px; }}
-                .agent {{ background: #f0f0f0; padding: 8px; margin: 5px; }}
-                .score-high {{ color: #dc3545; font-weight: bold; }}
-                .score-medium {{ color: #fd7e14; font-weight: bold; }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>🚨 NEW HOT LEAD - ACTION REQUIRED</h1>
-                <h2>Lead Score: <span class="score-high">{lead_data['lead_score']}/100</span></h2>
+        <body style="font-family: Arial; margin: 20px;">
+            <div style="background: #dc3545; color: white; padding: 20px; border-radius: 10px;">
+                <h1>🚨 HOT LEAD - CALL NOW!</h1>
+                <h2>Score: {lead_data.get('lead_score', 0)}/100</h2>
             </div>
-            
-            <div class="section urgent">
-                <h3>📋 LEAD SUMMARY</h3>
-                <p><strong>Business:</strong> {business_info['business_name']}</p>
-                <p><strong>Client Phone:</strong> {lead_data['phone_number']}</p>
-                <p><strong>Project Type:</strong> {lead_data['project_type'].title()}</p>
-                <p><strong>Urgency:</strong> {lead_data['urgency'].title()}</p>
-                <p><strong>Location:</strong> {lead_data.get('location', 'Not specified')}</p>
-                <p><strong>Budget Level:</strong> {lead_data.get('budget', 'Not specified')}</p>
-                <p><strong>Status:</strong> {lead_data['status'].title()}</p>
+            <div style="background: #fff3cd; padding: 15px; margin: 10px 0;">
+                <h3>📋 LEAD DETAILS</h3>
+                <p><strong>Business:</strong> {business_info.get('business_name', 'N/A')}</p>
+                <p><strong>Phone:</strong> {lead_data.get('phone_number', 'N/A')}</p>
+                <p><strong>Project:</strong> {lead_data.get('project_type', 'N/A')}</p>
+                <p><strong>Urgency:</strong> {lead_data.get('urgency', 'N/A')}</p>
             </div>
-            
-            <div class="section">
-                <h3>🎯 NEEDS ANALYSIS</h3>
-                <p>{lead_data['needs_analysis']}</p>
-            </div>
-            
-            <div class="section">
-                <h3>✅ NEXT STEPS</h3>
-                <p>{lead_data['next_steps']}</p>
-            </div>
-            
-            <div class="section">
-                <h3>💬 COMPLETE CONVERSATION</h3>
-                <div class="conversation">
-        """
-        
-        for conv in conversation_history:
-            if conv['message_direction'] == 'incoming':
-                html += f'<div class="customer"><strong>Customer:</strong> {conv["message_text"]}</div>'
-            else:
-                html += f'<div class="agent"><strong>Agent:</strong> {conv["response_text"]}</div>'
-        
-        html += f"""
-                </div>
-            </div>
-            
-            <div class="section">
-                <h3>📞 IMMEDIATE ACTION REQUIRED</h3>
-                <p><strong>Call this lead NOW:</strong> {lead_data['phone_number']}</p>
-                <p><strong>Reference:</strong> {lead_data['project_type']} project for {business_info['business_name']}</p>
-                <p><strong>Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <div style="background: #f8f9fa; padding: 15px; margin: 10px 0;">
+                <h3>📞 CALL THIS NUMBER NOW!</h3>
+                <h2>{lead_data.get('phone_number', 'N/A')}</h2>
             </div>
         </body>
         </html>
         """
         
-        # Plain text version
         text = f"""
-URGENT LEAD - ACTION REQUIRED
-=============================
-
-Lead Score: {lead_data['lead_score']}/100
-
-BUSINESS: {business_info['business_name']}
-CLIENT PHONE: {lead_data['phone_number']}
-PROJECT TYPE: {lead_data['project_type']}
-URGENCY: {lead_data['urgency']}
-LOCATION: {lead_data.get('location', 'Not specified')}
-
-NEEDS ANALYSIS:
-{lead_data['needs_analysis']}
-
-NEXT STEPS:
-{lead_data['next_steps']}
-
-CONVERSATION HISTORY:
-{"-" * 50}
-"""
+HOT LEAD - CALL NOW!
+===================
+Business: {business_info.get('business_name', 'N/A')}
+Phone: {lead_data.get('phone_number', 'N/A')}
+Project: {lead_data.get('project_type', 'N/A')}
+Urgency: {lead_data.get('urgency', 'N/A')}
+        """
         
-        for conv in conversation_history:
-            if conv['message_direction'] == 'incoming':
-                text += f"CUSTOMER: {conv['message_text']}\n"
-            else:
-                text += f"AGENT: {conv['response_text']}\n"
-        
-        text += f"""
-{"-" * 50}
-
-IMMEDIATE ACTION:
-• Call {lead_data['phone_number']} NOW
-• Reference: {lead_data['project_type']} project
-• Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-"""
-        
-        # Attach both versions
         part1 = MIMEText(text, 'plain')
         part2 = MIMEText(html, 'html')
         
         msg.attach(part1)
         msg.attach(part2)
         
-        # Send email
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
         
-        print(f"✅ COMPREHENSIVE LEAD EMAIL SENT: {lead_data['phone_number']}")
+        print(f"✅ LEAD EMAIL SENT")
         return True
         
     except Exception as e:
-        print(f"❌ LEAD EMAIL FAILED: {e}")
+        print(f"❌ EMAIL FAILED: {e}")
         return False
 
 def update_lead_conversation(lead_id, user_id, message_text, response_text, intent_analysis):
-    """Update lead with new conversation and analysis"""
+    """Update lead conversation"""
     with get_db() as conn:
         c = conn.cursor()
         
-        # Insert conversation
         c.execute('''
             INSERT INTO lead_conversations 
             (lead_id, user_id, message_text, response_text, intent_detected, needs_identified)
@@ -392,67 +411,64 @@ def update_lead_conversation(lead_id, user_id, message_text, response_text, inte
         ''', (lead_id, user_id, message_text, response_text, 
               json.dumps(intent_analysis), intent_analysis.get('key_requirements', '')))
         
-        # Update lead summary and score
-        c.execute('''
-            SELECT message_text, response_text 
-            FROM lead_conversations 
-            WHERE lead_id = ? 
-            ORDER BY timestamp
-        ''', (lead_id,))
-        
-        conversations = c.fetchall()
-        full_conversation = "\n".join([
-            f"Customer: {conv['message_text']}\nAgent: {conv['response_text']}" 
-            for conv in conversations
-        ])
-        
-        # Generate updated analysis
-        analysis_prompt = f"""
-        Based on this entire conversation, provide a comprehensive analysis:
-        
-        CONVERSATION:
-        {full_conversation}
-        
-        Provide:
-        1. Clear project requirements summary
-        2. Customer's main pain points
-        3. Urgency level assessment
-        4. Recommended next steps for sales team
-        
-        Keep it concise but comprehensive.
-        """
-        
-        try:
-            completion = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": analysis_prompt}],
-                temperature=0.3,
-                max_tokens=300
-            )
-            needs_analysis = completion.choices[0].message.content
-        except:
-            needs_analysis = "Analysis pending - review conversation history"
-        
-        # Calculate updated lead score
-        has_contact = any(word in full_conversation.lower() for word in ['call', 'phone', 'contact', 'number', 'reach'])
-        lead_score = calculate_lead_score(intent_analysis, len(message_text), has_contact)
-        
-        # Update lead record
-        c.execute('''
-            UPDATE leads 
-            SET conversation_summary = ?, needs_analysis = ?, lead_score = ?,
-                next_steps = ?, last_contact = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        ''', (full_conversation, needs_analysis, lead_score, 
-              f"Call customer to discuss {intent_analysis.get('project_type', 'project')}", lead_id))
-        
         conn.commit()
         
-        return {
-            'lead_id': lead_id,
-            'needs_analysis': needs_analysis,
-            'lead_score': lead_score
-        }
+        return {'lead_id': lead_id}
+
+# ==================== 🔥 FIXED AI PROMPT - SOUNDS HUMAN ====================
+def generate_human_response(business_name, business_context, customer_message, conversation_history=""):
+    """
+    Generate HUMAN-SOUNDING responses that CLOSE SALES
+    This is the KEY to making money - AI sounds like a real person!
+    """
+    
+    prompt = f"""You are Sarah, a friendly team member at {business_name}. You answer texts/calls like a real person would.
+
+CRITICAL RULES:
+1. NEVER say "I'll have someone call you" - YOU are that person! 
+2. NEVER give generic responses
+3. ASK SPECIFIC QUESTIONS to understand their exact needs
+4. Give REAL answers with pricing, timing, availability
+5. Sound conversational and natural
+6. Use their exact words when responding
+7. Get to the bottom of what they need FAST
+8. CLOSE THE SALE by asking for commitment
+
+BUSINESS INFO:
+{business_context}
+
+CONVERSATION SO FAR:
+{conversation_history}
+
+CURRENT CUSTOMER MESSAGE:
+"{customer_message}"
+
+NOW RESPOND LIKE A REAL HUMAN WHO WANTS TO CLOSE THIS DEAL:
+
+EXAMPLES OF GOOD RESPONSES:
+Customer: "I need 10 fixtures and end caps built how fast can you get it done?"
+YOU: "Hey! I can get 10 fixtures with end caps done for you. When do you need them by? We usually do custom builds like this in 3-5 days. What's your project timeline and location?"
+
+Customer: "Do you do electrical work?"
+YOU: "Yes we do! What kind of electrical work are you looking for? New installation, repairs, or upgrades? And where's the job located?"
+
+Customer: "How much for a service call?"
+YOU: "Service calls are $125 which covers the first hour. What's going on that you need looked at? I can give you a better quote once I know what we're dealing with."
+
+NOW RESPOND TO THE CUSTOMER ABOVE (2-3 sentences max, sound HUMAN):"""
+    
+    try:
+        completion = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.8,  # Higher for more human-like variation
+            max_tokens=150
+        )
+        return completion.choices[0].message.content, completion['usage']['total_tokens']
+    except Exception as e:
+        print(f"AI Error: {e}")
+        # Fallback response that still sounds human
+        return f"Hey! Thanks for reaching out to {business_name}. Can you tell me more about what you need? That way I can give you accurate pricing and timing.", 0
 
 # ==================== LANDING PAGE ====================
 @app.route('/')
@@ -482,22 +498,13 @@ def index():
                     <h2>$29.99/month</h2>
                     <ul style="text-align: left;">
                         <li>AI Phone & SMS Agent</li>
-                        <li>Website Scanning</li>
-                        <li>Lead Capture</li>
+                        <li>Sounds Like Real Human</li>
+                        <li>Closes Sales 24/7</li>
+                        <li>Lead Tracking</li>
                         <li>3 Free Tests</li>
                     </ul>
                     <a href="/register" class="btn">Get Started</a>
                 </div>
-            </div>
-        </div>
-        
-        <div style="margin: 40px 0;">
-            <h2>How It Works</h2>
-            <div style="display: flex; justify-content: center; gap: 30px; margin: 30px 0;">
-                <div>1. Sign up & customize</div>
-                <div>2. Test your AI agent</div>
-                <div>3. Connect phone number</div>
-                <div>4. Go live!</div>
             </div>
         </div>
     </body>
@@ -521,11 +528,39 @@ def login():
             session['email'] = user['email']
             session['business_name'] = user['business_name']
             session['user_plan'] = user['plan_type']
+            
+            memory_mgr.log_login(
+                user_id=user['id'],
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+            
             return redirect(url_for('dashboard'))
         else:
             flash('Invalid email or password')
     
-    return render_template('login.html')
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Login - LeaX</title>
+        <style>
+            body { font-family: Arial; max-width: 400px; margin: 100px auto; padding: 20px; }
+            input { width: 100%; padding: 10px; margin: 10px 0; }
+            button { background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; width: 100%; }
+        </style>
+    </head>
+    <body>
+        <h2>Login to LeaX</h2>
+        <form method="POST">
+            <input type="email" name="email" placeholder="Email" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Login</button>
+        </form>
+        <p><a href="/register">Sign up</a></p>
+    </body>
+    </html>
+    '''
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -549,7 +584,7 @@ def register():
                 <input type="password" name="password" placeholder="Password" required>
                 <button type="submit">Create Account</button>
             </form>
-            <p><a href="/login">Already have an account? Login</a></p>
+            <p><a href="/login">Login</a></p>
         </body>
         </html>
         '''
@@ -575,25 +610,23 @@ def register():
                 
                 conn.commit()
             
+            memory_path = memory_mgr.create_customer_memory(
+                user_id=user_id,
+                business_name=business_name,
+                email=email
+            )
+            
             session['user_id'] = user_id
             session['email'] = email
             session['business_name'] = business_name
             session['user_plan'] = 'starter'
             
-            send_comprehensive_lead_email(
-                {
-                    'phone_number': 'New Registration',
-                    'project_type': 'Account Setup',
-                    'urgency': 'low',
-                    'business_name': business_name,
-                    'lead_score': 10,
-                    'status': 'new',
-                    'needs_analysis': f'New user registration: {email}',
-                    'next_steps': 'Welcome new user and assist with setup'
-                },
-                [],
-                {'business_name': business_name}
-            )
+            email_notifier.notify_new_signup({
+                'user_id': user_id,
+                'business_name': business_name,
+                'email': email,
+                'plan_type': 'trial'
+            })
             
             return redirect(url_for('customize_agent'))
             
@@ -616,10 +649,7 @@ def dashboard():
         c = conn.cursor()
         c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
         user = c.fetchone()
-        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
-        business = c.fetchone()
         
-        # Get lead stats
         c.execute('''
             SELECT COUNT(*) as total_leads, 
                    COUNT(CASE WHEN status = 'new' THEN 1 END) as new_leads,
@@ -628,8 +658,9 @@ def dashboard():
         ''', (session['user_id'],))
         lead_stats = c.fetchone()
     
+    analytics = memory_mgr.get_customer_analytics(session['user_id'])
+    
     user_dict = dict(user) if user else {}
-    business_dict = dict(business) if business else {}
     lead_stats_dict = dict(lead_stats) if lead_stats else {}
     
     return f'''
@@ -640,14 +671,14 @@ def dashboard():
         <style>
             body {{ font-family: Arial; max-width: 1000px; margin: 40px auto; padding: 20px; }}
             .card {{ background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 8px; }}
-            .btn {{ background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }}
-            .stats-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 20px 0; }}
+            .btn {{ background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 5px; }}
+            .stats-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin: 20px 0; }}
             .stat-card {{ background: white; padding: 20px; border-radius: 8px; text-align: center; border-left: 4px solid #007cba; }}
             .stat-number {{ font-size: 2em; font-weight: bold; color: #007cba; }}
         </style>
     </head>
     <body>
-        <h1>Welcome to LeaX, {session['business_name']}!</h1>
+        <h1>Welcome, {session['business_name']}!</h1>
         
         <div class="stats-grid">
             <div class="stat-card">
@@ -655,8 +686,12 @@ def dashboard():
                 <div>Total Leads</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">{lead_stats_dict.get('new_leads', 0)}</div>
-                <div>New Leads</div>
+                <div class="stat-number">{analytics['total_messages'] if analytics else 0}</div>
+                <div>Messages</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{analytics['total_calls'] if analytics else 0}</div>
+                <div>Calls</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number">{lead_stats_dict.get('hot_leads', 0)}</div>
@@ -673,10 +708,11 @@ def dashboard():
         
         <div class="card">
             <h3>Quick Actions</h3>
-            <p><a href="/customize" class="btn">Customize Agent</a></p>
-            <p><a href="/test-agent" class="btn">Test Your Agent</a></p>
-            <p><a href="/leads" class="btn">View Leads</a></p>
-            <p><a href="/pricing" class="btn">Upgrade Plan</a></p>
+            <a href="/customize" class="btn">Customize Agent</a>
+            <a href="/test-agent" class="btn">Test Agent</a>
+            <a href="/leads" class="btn">View Leads</a>
+            <a href="/analytics" class="btn">Analytics</a>
+            <a href="/pricing" class="btn">Upgrade</a>
         </div>
         
         <p><a href="/logout">Logout</a></p>
@@ -684,102 +720,7 @@ def dashboard():
     </html>
     '''
 
-# ==================== LEADS MANAGEMENT ====================
-@app.route('/leads')
-def view_leads():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('''
-            SELECT * FROM leads 
-            WHERE user_id = ? 
-            ORDER BY lead_score DESC, last_contact DESC
-        ''', (session['user_id'],))
-        leads = [dict(row) for row in c.fetchall()]
-    
-    leads_html = ""
-    for lead in leads:
-        score_color = "score-high" if lead['lead_score'] >= 70 else "score-medium" if lead['lead_score'] >= 50 else ""
-        leads_html += f'''
-        <div class="lead-card">
-            <h3>📞 {lead['phone_number']} <span class="{score_color}">({lead['lead_score']}/100)</span></h3>
-            <p><strong>Project:</strong> {lead['project_type']}</p>
-            <p><strong>Urgency:</strong> {lead['urgency']}</p>
-            <p><strong>Status:</strong> {lead['status']}</p>
-            <p><strong>Last Contact:</strong> {lead['last_contact']}</p>
-            <button onclick="viewLeadDetails({lead['id']})">View Details</button>
-        </div>
-        '''
-    
-    return f'''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Leads - LeaX</title>
-        <style>
-            body {{ font-family: Arial; max-width: 1000px; margin: 40px auto; padding: 20px; }}
-            .lead-card {{ background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #007cba; }}
-            .score-high {{ color: #dc3545; font-weight: bold; }}
-            .score-medium {{ color: #fd7e14; font-weight: bold; }}
-            .btn {{ background: #007cba; color: white; padding: 8px 15px; text-decoration: none; border-radius: 5px; border: none; cursor: pointer; }}
-        </style>
-    </head>
-    <body>
-        <h1>Your Leads - {session['business_name']}</h1>
-        <p>Total Leads: {len(leads)}</p>
-        
-        <div id="leadsList">
-            {leads_html if leads else '<p>No leads yet. Start testing your agent or go live to capture leads!</p>'}
-        </div>
-        
-        <div id="leadDetails" style="display: none; margin-top: 20px; padding: 20px; background: white; border: 1px solid #ddd;"></div>
-        
-        <script>
-            function viewLeadDetails(leadId) {{
-                fetch(`/api/lead-details/${{leadId}}`)
-                    .then(response => response.json())
-                    .then(lead => {{
-                        const detailsDiv = document.getElementById('leadDetails');
-                        detailsDiv.style.display = 'block';
-                        detailsDiv.innerHTML = `
-                            <h2>Lead Details</h2>
-                            <p><strong>Phone:</strong> ${{lead.phone_number}}</p>
-                            <p><strong>Project:</strong> ${{lead.project_type}}</p>
-                            <p><strong>Urgency:</strong> ${{lead.urgency}}</p>
-                            <p><strong>Location:</strong> ${{lead.location || 'Not specified'}}</p>
-                            <p><strong>Lead Score:</strong> ${{lead.lead_score}}/100</p>
-                            <p><strong>Needs Analysis:</strong></p>
-                            <div style="background: #f8f9fa; padding: 10px; border-radius: 5px;">${{lead.needs_analysis}}</div>
-                            <p><strong>Next Steps:</strong> ${{lead.next_steps}}</p>
-                            <button class="btn" onclick="document.getElementById('leadDetails').style.display='none'">Close</button>
-                        `;
-                    }});
-            }}
-        </script>
-        
-        <p><a href="/dashboard">Back to Dashboard</a></p>
-    </body>
-    </html>
-    '''
-
-@app.route('/api/lead-details/<int:lead_id>')
-def get_lead_details(lead_id):
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not logged in'})
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM leads WHERE id = ? AND user_id = ?', (lead_id, session['user_id']))
-        lead = c.fetchone()
-        
-        if lead:
-            return jsonify(dict(lead))
-        else:
-            return jsonify({'error': 'Lead not found'})
-
-# ==================== AGENT CUSTOMIZATION ====================
+# ==================== CUSTOMIZE AGENT ====================
 @app.route('/customize')
 def customize_agent():
     if 'user_id' not in session:
@@ -789,31 +730,29 @@ def customize_agent():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Customize Agent - LeaX</title>
+        <title>Customize Agent</title>
         <style>
             body { font-family: Arial; max-width: 600px; margin: 40px auto; padding: 20px; }
-            input, textarea { width: 100%; padding: 10px; margin: 10px 0; }
-            button { background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; }
+            input, textarea, select { width: 100%; padding: 10px; margin: 10px 0; }
+            button { background: #007cba; color: white; padding: 12px 30px; border: none; cursor: pointer; width: 100%; }
+            .message { display: none; padding: 10px; margin: 10px 0; border-radius: 5px; }
+            .success { background: #d4edda; color: #155724; }
         </style>
     </head>
     <body>
         <h2>Customize Your AI Agent</h2>
         
-        <div id="message" style="display: none; background: #d4edda; padding: 10px; margin: 10px 0;"></div>
+        <div id="message" class="message"></div>
         
         <form id="customizeForm">
             <h3>Business Information</h3>
             <input type="url" id="website_url" placeholder="Your website URL (optional)">
-            <textarea id="custom_info" placeholder="Custom business info..." rows="4"></textarea>
+            <textarea id="custom_info" placeholder="Tell us about your business, services, pricing..." rows="6"></textarea>
             
-            <h3>Agent Personality</h3>
-            <select id="personality">
-                <option value="friendly">Friendly & Helpful</option>
-                <option value="professional">Professional</option>
-                <option value="enthusiastic">Enthusiastic</option>
-            </select>
+            <h3>Agent Name (sounds more human)</h3>
+            <input type="text" id="agent_name" placeholder="e.g., Sarah, Mike, etc." value="Sarah">
             
-            <button type="submit">Save Customization</button>
+            <button type="submit">Save</button>
         </form>
         
         <script>
@@ -823,7 +762,7 @@ def customize_agent():
                 const data = {
                     website_url: document.getElementById('website_url').value,
                     custom_info: document.getElementById('custom_info').value,
-                    personality: document.getElementById('personality').value
+                    agent_name: document.getElementById('agent_name').value
                 };
                 
                 fetch('/api/save-customization', {
@@ -835,14 +774,8 @@ def customize_agent():
                 .then(result => {
                     const message = document.getElementById('message');
                     message.style.display = 'block';
-                    message.textContent = 'Customization saved successfully!';
-                    message.style.background = '#d4edda';
-                })
-                .catch(error => {
-                    const message = document.getElementById('message');
-                    message.style.display = 'block';
-                    message.textContent = 'Error saving customization';
-                    message.style.background = '#f8d7da';
+                    message.className = 'message success';
+                    message.textContent = 'Saved!';
                 });
             });
         </script>
@@ -865,12 +798,19 @@ def save_customization():
             INSERT OR REPLACE INTO business_info 
             (user_id, website_url, custom_info, agent_personality) 
             VALUES (?, ?, ?, ?)
-        ''', (session['user_id'], data.get('website_url'), data.get('custom_info'), data.get('personality', 'friendly')))
+        ''', (session['user_id'], data.get('website_url'), 
+              data.get('custom_info'), data.get('agent_name', 'Sarah')))
         conn.commit()
+    
+    memory_mgr.update_business_profile(session['user_id'], {
+        'website_url': data.get('website_url'),
+        'custom_info': data.get('custom_info'),
+        'personality': data.get('agent_name', 'Sarah')
+    })
     
     return jsonify({'success': True})
 
-# ==================== TESTING ====================
+# ==================== TEST AGENT ====================
 @app.route('/test-agent')
 def test_agent():
     if 'user_id' not in session:
@@ -891,24 +831,25 @@ def test_agent():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Test Agent - LeaX</title>
+        <title>Test Agent</title>
         <style>
             body { font-family: Arial; max-width: 600px; margin: 40px auto; padding: 20px; }
-            #chat { border: 1px solid #ddd; height: 300px; overflow-y: scroll; padding: 10px; margin: 20px 0; }
-            .message { margin: 10px 0; padding: 10px; border-radius: 5px; }
+            #chat { border: 1px solid #ddd; height: 400px; overflow-y: scroll; padding: 10px; margin: 20px 0; background: #f8f9fa; }
+            .message { margin: 10px 0; padding: 10px; border-radius: 5px; max-width: 80%; }
             .user { background: #007cba; color: white; margin-left: 20%; }
-            .agent { background: #f0f0f0; margin-right: 20%; }
-            input { width: 70%; padding: 10px; }
-            button { padding: 10px 20px; }
+            .agent { background: white; margin-right: 20%; border: 1px solid #ddd; }
+            #inputContainer { display: flex; gap: 10px; }
+            input { flex: 1; padding: 10px; }
+            button { padding: 10px 20px; background: #007cba; color: white; border: none; cursor: pointer; border-radius: 5px; }
         </style>
     </head>
     <body>
         <h2>Test Your AI Agent</h2>
-        <p>Try chatting with your AI agent to see how it responds!</p>
+        <p><strong>Try this:</strong> "I need 10 fixtures and end caps built how fast can you get it done?"</p>
         
         <div id="chat"></div>
         
-        <div>
+        <div id="inputContainer">
             <input type="text" id="messageInput" placeholder="Type a message...">
             <button onclick="sendMessage()">Send</button>
         </div>
@@ -943,7 +884,6 @@ def test_agent():
                 }
             }
             
-            // Enter key to send
             document.getElementById('messageInput').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') sendMessage();
             });
@@ -962,148 +902,61 @@ def test_chat():
     data = request.json
     user_message = data.get('message')
     
+    # Get conversation history from memory
+    conversation_context = memory_mgr.get_conversation_context(
+        session['user_id'], 
+        'TEST-USER',
+        last_n_messages=5
+    )
+    
     with get_db() as conn:
         c = conn.cursor()
         c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
         business = c.fetchone()
     
-    # SCAN WEBSITE FOR BUSINESS INFO
-    business_services = []
-    if business and business['website_url']:
-        try:
-            response = requests.get(business['website_url'])
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Extract services from website
-            for element in soup.find_all(['h1', 'h2', 'h3', 'p', 'li']):
-                text = element.get_text().lower()
-                service_keywords = ['service', 'solution', 'offer', 'provide', 'specializ', 'expert', 'install', 'build', 'repair', 'maintain']
-                if any(keyword in text for keyword in service_keywords):
-                    business_services.append(element.get_text().strip())
-        except:
-            pass
-    
     business_context = f"""
-BUSINESS: {session.get('business_name', 'American Power')}
-WEBSITE: {business['website_url'] if business else ''}
-SERVICES: {', '.join(business_services[:5]) if business_services else 'Electrical services, fiber optic installation, data center builds, networking solutions'}
-CUSTOM INFO: {business['custom_info'] if business else 'We provide skilled workers for electrical, networking, and data center projects. Available 24/7 for emergency calls.'}
-PERSONALITY: {business['agent_personality'] if business else 'professional'}
-"""
-
-    # Analyze customer intent for lead tracking
-    intent_analysis = analyze_customer_intent(user_message)
-    
-    # ULTIMATE SALES CLOSING PROMPT
-    prompt = f"""
-You are a SALES CLOSER for {session.get('business_name', 'American Power')}. Your ONLY goal is to CLOSE THE SALE.
-
-**BUSINESS CONTEXT:**
-{business_context}
-
-**CUSTOMER ANALYSIS:**
-Project Type: {intent_analysis.get('project_type', 'general inquiry')}
-Urgency: {intent_analysis.get('urgency', 'flexible')}
-Key Requirements: {intent_analysis.get('key_requirements', 'Not specified')}
-
-**YOUR MISSION:**
-- Sound like a REAL HUMAN employee
-- IDENTIFY the customer's specific need
-- OFFER the exact service they need
-- GET THEIR CONTACT INFO
-- CLOSE THE SALE or SCHEDULE A CALL
-- Be DIRECT and PROFESSIONAL
-
-**CLOSING TECHNIQUES:**
-- "Perfect! I have 2 available technicians for that Amazon locker build. What's the best number to confirm details?"
-- "We specialize in fiber optic and data center work. Let me get your contact info to schedule our team."
-- "We can definitely have those 10 end caps built by Tuesday 3pm. What's the project address?"
-- "I'll have our project manager call you within 30 minutes to finalize. Keep your phone handy!"
-
-**CURRENT CUSTOMER MESSAGE: {user_message}**
-
-**YOUR RESPONSE (CLOSE THE SALE - 2-3 sentences max):**
+Business: {session.get('business_name')}
+Services: {business['custom_info'] if business and business['custom_info'] else 'Full service provider - electrical, construction, installations'}
+Website: {business['website_url'] if business and business['website_url'] else 'Not provided'}
 """
     
-    try:
-        completion = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=150
-        )
-        ai_reply = completion.choices[0].message.content
-        
-        # CREATE OR UPDATE LEAD
-        test_phone = "TEST-" + str(int(time.time()))[-6:]
-        with get_db() as conn:
-            c = conn.cursor()
-            
-            # Check if test lead exists
-            c.execute('SELECT id FROM leads WHERE phone_number = ? AND user_id = ?', (test_phone, session['user_id']))
-            existing_lead = c.fetchone()
-            
-            if existing_lead:
-                lead_id = existing_lead['id']
-                # Update existing test lead
-                update_result = update_lead_conversation(lead_id, session['user_id'], user_message, ai_reply, intent_analysis)
-            else:
-                # Create new test lead
-                lead_score = calculate_lead_score(intent_analysis, len(user_message), False)
-                
-                c.execute('''
-                    INSERT INTO leads 
-                    (user_id, phone_number, project_type, urgency, budget, location, status, lead_score, conversation_summary)
-                    VALUES (?, ?, ?, ?, ?, ?, 'test', ?, ?)
-                ''', (session['user_id'], test_phone, 
-                      intent_analysis.get('project_type', 'general_inquiry'),
-                      intent_analysis.get('urgency', 'flexible'),
-                      intent_analysis.get('potential_budget', 'unknown'),
-                      intent_analysis.get('location', 'unknown'),
-                      lead_score,
-                      f"Test conversation: {user_message}"))
-                
-                lead_id = c.lastrowid
-                
-                # Add to conversation history
-                c.execute('''
-                    INSERT INTO lead_conversations 
-                    (lead_id, user_id, message_text, response_text, intent_detected, needs_identified)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (lead_id, session['user_id'], user_message, ai_reply, 
-                      json.dumps(intent_analysis), intent_analysis.get('key_requirements', '')))
-                
-                conn.commit()
-            
-            # Get conversation history for email
-            c.execute('''
-                SELECT message_text, response_text, message_direction 
-                FROM lead_conversations 
-                WHERE lead_id = ? 
-                ORDER BY timestamp
-            ''', (lead_id,))
-            conversation_history = [dict(row) for row in c.fetchall()]
-            
-            # Get lead data for email
-            c.execute('SELECT * FROM leads WHERE id = ?', (lead_id,))
-            lead_data = dict(c.fetchone())
-        
-        # SEND COMPREHENSIVE LEAD EMAIL
-        business_info = {
-            'business_name': session.get('business_name', 'Test Business')
-        }
-        send_comprehensive_lead_email(lead_data, conversation_history, business_info)
-        
-    except Exception as e:
-        print(f"Error in test chat: {e}")
-        ai_reply = "Thanks for your inquiry! Our team will call you within 30 minutes to discuss your project. Please keep your phone handy."
+    # Generate HUMAN response
+    ai_reply, tokens = generate_human_response(
+        session.get('business_name'),
+        business_context,
+        user_message,
+        conversation_context
+    )
+    
+    # Log to memory
+    memory_mgr.log_conversation(session['user_id'], {
+        'type': 'sms',
+        'direction': 'inbound',
+        'from_number': 'TEST-USER',
+        'to_number': 'AI-AGENT',
+        'content': user_message,
+        'ai_model': 'gpt-4',
+        'tokens': tokens,
+        'cost': tokens * 0.00003
+    })
+    
+    memory_mgr.log_conversation(session['user_id'], {
+        'type': 'sms',
+        'direction': 'outbound',
+        'from_number': 'AI-AGENT',
+        'to_number': 'TEST-USER',
+        'content': ai_reply,
+        'ai_model': 'gpt-4',
+        'tokens': 0,
+        'cost': 0
+    })
     
     return jsonify({'reply': ai_reply})
 
 # ==================== LIVE AGENT ENDPOINT ====================
 @app.route('/agent/<user_id>', methods=['POST'])
 def ai_agent(user_id):
-    """Live AI agent endpoint for paying customers with comprehensive lead tracking"""
+    """Live AI agent - handles SMS and VOICE CALLS"""
     with get_db() as conn:
         c = conn.cursor()
         c.execute('SELECT * FROM users WHERE id = ? AND status != "trial"', (user_id,))
@@ -1119,179 +972,305 @@ def ai_agent(user_id):
     if "SmsMessageSid" in request.form:
         incoming_msg = request.form.get('Body', '').strip()
         from_number = request.form.get('From', '')
+        to_number = request.form.get('To', '')
         
-        # SCAN WEBSITE FOR BUSINESS INFO
-        business_services = []
-        if business and business['website_url']:
-            try:
-                response = requests.get(business['website_url'])
-                soup = BeautifulSoup(response.content, 'html.parser')
-                
-                # Extract services from website
-                for element in soup.find_all(['h1', 'h2', 'h3', 'p', 'li']):
-                    text = element.get_text().lower()
-                    service_keywords = ['service', 'solution', 'offer', 'provide', 'specializ', 'expert', 'install', 'build', 'repair', 'maintain']
-                    if any(keyword in text for keyword in service_keywords):
-                        business_services.append(element.get_text().strip())
-            except:
-                pass
+        # Get conversation history
+        conversation_context = memory_mgr.get_conversation_context(
+            user_id, 
+            from_number,
+            last_n_messages=10
+        )
         
         business_context = f"""
-BUSINESS: {user['business_name']}
-WEBSITE: {business['website_url'] if business else ''}
-SERVICES: {', '.join(business_services[:5]) if business_services else 'Electrical services, fiber optic installation, data center builds, networking solutions'}
-CUSTOM INFO: {business['custom_info'] if business else 'We provide skilled workers for electrical, networking, and data center projects. Available 24/7 for emergency calls.'}
-PERSONALITY: {business['agent_personality'] if business else 'professional'}
+Business: {user['business_name']}
+Services: {business['custom_info'] if business and business['custom_info'] else 'Full service provider'}
+Website: {business['website_url'] if business and business['website_url'] else ''}
 """
         
-        # Analyze customer intent for lead tracking
-        intent_analysis = analyze_customer_intent(incoming_msg)
+        # Generate HUMAN response
+        ai_reply, tokens = generate_human_response(
+            user['business_name'],
+            business_context,
+            incoming_msg,
+            conversation_context
+        )
         
-        # ULTIMATE SALES CLOSING PROMPT
-        prompt = f"""
-You are a SALES CLOSER for {user['business_name']}. Your ONLY goal is to CLOSE THE SALE.
-
-**BUSINESS CONTEXT:**
-{business_context}
-
-**CUSTOMER ANALYSIS:**
-Project Type: {intent_analysis.get('project_type', 'general inquiry')}
-Urgency: {intent_analysis.get('urgency', 'flexible')}
-Key Requirements: {intent_analysis.get('key_requirements', 'Not specified')}
-
-**YOUR MISSION:**
-- Sound like a REAL HUMAN employee
-- IDENTIFY the customer's specific need
-- OFFER the exact service they need
-- GET THEIR CONTACT INFO
-- CLOSE THE SALE or SCHEDULE A CALL
-- Be DIRECT and PROFESSIONAL
-
-**CLOSING TECHNIQUES:**
-- "Perfect! I have 2 available technicians for that Amazon locker build. What's the best number to confirm details?"
-- "We specialize in fiber optic and data center work. Let me get your contact info to schedule our team."
-- "We can definitely have those 10 end caps built by Tuesday 3pm. What's the project address?"
-- "I'll have our project manager call you within 30 minutes to finalize. Keep your phone handy!"
-
-**CURRENT CUSTOMER MESSAGE: {incoming_msg}**
-
-**YOUR RESPONSE (CLOSE THE SALE - 2-3 sentences max):**
-"""
+        # Log to memory
+        memory_mgr.log_conversation(user_id, {
+            'type': 'sms',
+            'direction': 'inbound',
+            'from_number': from_number,
+            'to_number': to_number,
+            'content': incoming_msg,
+            'ai_model': 'gpt-4',
+            'tokens': tokens,
+            'cost': tokens * 0.00003
+        })
         
-        try:
-            completion = openai.ChatCompletion.create(
-                model="gpt-4" if user['plan_type'] == 'pro' else "gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=150
-            )
-            ai_reply = completion.choices[0].message.content
-            
-            # CREATE OR UPDATE LEAD
+        memory_mgr.log_conversation(user_id, {
+            'type': 'sms',
+            'direction': 'outbound',
+            'from_number': to_number,
+            'to_number': from_number,
+            'content': ai_reply,
+            'ai_model': 'gpt-4',
+            'tokens': 0,
+            'cost': 0
+        })
+        
+        # Send email notification
+        email_notifier.notify_conversation({
+            'business_name': user['business_name'],
+            'email': user['email'],
+            'user_id': user_id
+        }, {
+            'type': 'sms',
+            'from_number': from_number,
+            'to_number': to_number,
+            'direction': 'inbound',
+            'content': incoming_msg
+        })
+        
+        # Create/Update Lead
+        with get_db() as conn:
+            c = conn.cursor()
             c.execute('SELECT id FROM leads WHERE phone_number = ? AND user_id = ?', (from_number, user_id))
             existing_lead = c.fetchone()
             
-            if existing_lead:
-                lead_id = existing_lead['id']
-                # Update existing lead
-                update_result = update_lead_conversation(lead_id, user_id, incoming_msg, ai_reply, intent_analysis)
-                lead_data = update_result
-            else:
-                # Create new lead
-                has_contact_info = any(word in incoming_msg.lower() for word in ['call', 'phone', 'contact', 'number', 'reach'])
-                lead_score = calculate_lead_score(intent_analysis, len(incoming_msg), has_contact_info)
+            intent_analysis = analyze_customer_intent(incoming_msg)
+            
+            if not existing_lead:
+                lead_score = calculate_lead_score(intent_analysis, len(incoming_msg), False)
                 
                 c.execute('''
                     INSERT INTO leads 
-                    (user_id, phone_number, project_type, urgency, budget, location, status, lead_score)
-                    VALUES (?, ?, ?, ?, ?, ?, 'new', ?)
+                    (user_id, phone_number, project_type, urgency, status, lead_score)
+                    VALUES (?, ?, ?, ?, 'new', ?)
                 ''', (user_id, from_number, 
-                      intent_analysis.get('project_type', 'general_inquiry'),
+                      intent_analysis.get('project_type', 'inquiry'),
                       intent_analysis.get('urgency', 'flexible'),
-                      intent_analysis.get('potential_budget', 'unknown'),
-                      intent_analysis.get('location', 'unknown'),
                       lead_score))
                 
                 lead_id = c.lastrowid
-                
-                # Add to conversation history
-                c.execute('''
-                    INSERT INTO lead_conversations 
-                    (lead_id, user_id, message_text, response_text, intent_detected, needs_identified)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (lead_id, user_id, incoming_msg, ai_reply, 
-                      json.dumps(intent_analysis), intent_analysis.get('key_requirements', '')))
-                
-                # Generate initial analysis
-                analysis_prompt = f"""
-                New lead inquiry: {incoming_msg}
-                
-                Project Type: {intent_analysis.get('project_type')}
-                Urgency: {intent_analysis.get('urgency')}
-                Requirements: {intent_analysis.get('key_requirements')}
-                
-                Provide a quick analysis of this lead's needs and recommended next steps.
-                """
-                
-                try:
-                    completion = openai.ChatCompletion.create(
-                        model="gpt-3.5-turbo",
-                        messages=[{"role": "user", "content": analysis_prompt}],
-                        temperature=0.3,
-                        max_tokens=200
-                    )
-                    needs_analysis = completion.choices[0].message.content
-                except:
-                    needs_analysis = "New lead - review conversation"
-                
-                c.execute('''
-                    UPDATE leads 
-                    SET needs_analysis = ?, next_steps = ?
-                    WHERE id = ?
-                ''', (needs_analysis, f"Call to discuss {intent_analysis.get('project_type', 'project')}", lead_id))
-                
                 conn.commit()
                 
-                lead_data = {
-                    'lead_id': lead_id,
-                    'needs_analysis': needs_analysis,
-                    'lead_score': lead_score
-                }
-            
-            # Get conversation history for email
-            c.execute('''
-                SELECT message_text, response_text, message_direction 
-                FROM lead_conversations 
-                WHERE lead_id = ? 
-                ORDER BY timestamp
-            ''', (lead_id,))
-            conversation_history = [dict(row) for row in c.fetchall()]
-            
-            # Get complete lead data for email
-            c.execute('SELECT * FROM leads WHERE id = ?', (lead_id,))
-            complete_lead_data = dict(c.fetchone())
-            
-            # SEND COMPREHENSIVE LEAD EMAIL
-            business_info = {
-                'business_name': user['business_name']
-            }
-            send_comprehensive_lead_email(complete_lead_data, conversation_history, business_info)
-            
-        except Exception as e:
-            print(f"Error in live agent: {e}")
-            ai_reply = "Thanks for your message! We'll get back to you soon."
+                # Send lead email
+                c.execute('SELECT * FROM leads WHERE id = ?', (lead_id,))
+                lead_data = dict(c.fetchone())
+                
+                send_comprehensive_lead_email(lead_data, [], {'business_name': user['business_name']})
         
         resp = MessagingResponse()
         resp.message(ai_reply)
         return str(resp)
     
-    # Handle Voice
+    # Handle VOICE CALLS
     else:
+        from_number = request.form.get('From', '')
+        to_number = request.form.get('To', '')
+        
+        # Get conversation history for context
+        conversation_context = memory_mgr.get_conversation_context(
+            user_id, 
+            from_number,
+            last_n_messages=5
+        )
+        
+        business_context = f"""
+Business: {user['business_name']}
+Services: {business['custom_info'] if business and business['custom_info'] else 'Full service provider'}
+"""
+        
+        # Generate greeting for voice call
+        greeting, tokens = generate_human_response(
+            user['business_name'],
+            business_context,
+            "Incoming phone call - greet them professionally",
+            conversation_context
+        )
+        
+        # Log call to memory
+        memory_mgr.log_conversation(user_id, {
+            'type': 'call',
+            'direction': 'inbound',
+            'from_number': from_number,
+            'to_number': to_number,
+            'content': f"Voice call from {from_number}",
+            'duration': 0,
+            'ai_model': 'voice',
+            'tokens': 0,
+            'cost': 0.01
+        })
+        
         resp = VoiceResponse()
-        resp.say(f"Thanks for calling {user['business_name']}! Text us at this number and we'll help you right away!")
+        
+        # Answer with human-like greeting
+        resp.say(
+            f"Hi! You've reached {user['business_name']}. For fastest service, please text us at this number and we'll get right back to you with pricing and availability. Or stay on the line and we'll connect you shortly.",
+            voice='alice',
+            language='en-US'
+        )
+        
+        # Gather input if they want to leave a message
+        gather = Gather(num_digits=1, action=f'/agent/{user_id}/voice-menu', method='POST')
+        gather.say('Press 1 to leave a message, or press 2 to text us instead.', voice='alice')
+        resp.append(gather)
+        
         return str(resp)
 
-# ==================== PRICING & PAYMENTS ====================
+@app.route('/agent/<user_id>/voice-menu', methods=['POST'])
+def voice_menu(user_id):
+    """Handle voice call menu"""
+    digit = request.form.get('Digits', '')
+    
+    resp = VoiceResponse()
+    
+    if digit == '1':
+        resp.say('Please leave your message after the beep, and we will call you back shortly.', voice='alice')
+        resp.record(max_length=60, action=f'/agent/{user_id}/voicemail', method='POST')
+    elif digit == '2':
+        from_number = request.form.get('From', '')
+        resp.say(f'Great! Text this number and we will respond right away. The number again is {to_number}. Thanks!', voice='alice')
+    else:
+        resp.say('Sorry, I did not get that. Please call back or text us. Goodbye!', voice='alice')
+    
+    resp.hangup()
+    return str(resp)
+
+@app.route('/agent/<user_id>/voicemail', methods=['POST'])
+def handle_voicemail(user_id):
+    """Handle voicemail recording"""
+    recording_url = request.form.get('RecordingUrl', '')
+    from_number = request.form.get('From', '')
+    
+    # Send email notification about voicemail
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+        user = c.fetchone()
+        
+        if user:
+            email_notifier.send_notification(
+                f"📞 VOICEMAIL: {user['business_name']}",
+                f"<p>New voicemail from {from_number}</p><p><a href='{recording_url}'>Listen to recording</a></p>",
+                f"Voicemail from {from_number}\nRecording: {recording_url}"
+            )
+    
+    resp = VoiceResponse()
+    resp.say('Thank you! We received your message and will call you back soon.', voice='alice')
+    resp.hangup()
+    return str(resp)
+
+# ==================== LEADS ====================
+@app.route('/leads')
+def view_leads():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT * FROM leads 
+            WHERE user_id = ? 
+            ORDER BY lead_score DESC, last_contact DESC
+            LIMIT 50
+        ''', (session['user_id'],))
+        leads = [dict(row) for row in c.fetchall()]
+    
+    leads_html = ""
+    for lead in leads:
+        score_color = "#dc3545" if lead['lead_score'] >= 70 else "#fd7e14" if lead['lead_score'] >= 50 else "#666"
+        leads_html += f'''
+        <div style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid {score_color};">
+            <h3>📞 {lead['phone_number']} <span style="color: {score_color};">({lead['lead_score']}/100)</span></h3>
+            <p><strong>Project:</strong> {lead['project_type']}</p>
+            <p><strong>Urgency:</strong> {lead['urgency']}</p>
+            <p><strong>Status:</strong> {lead['status']}</p>
+            <p><strong>Last Contact:</strong> {lead['last_contact']}</p>
+        </div>
+        '''
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Leads</title>
+        <style>
+            body {{ font-family: Arial; max-width: 1000px; margin: 40px auto; padding: 20px; }}
+        </style>
+    </head>
+    <body>
+        <h1>Your Leads - {session['business_name']}</h1>
+        <p>Total: {len(leads)}</p>
+        
+        {leads_html if leads else '<p>No leads yet. Test your agent to see it in action!</p>'}
+        
+        <p><a href="/dashboard">Back to Dashboard</a></p>
+    </body>
+    </html>
+    '''
+
+# ==================== ANALYTICS ====================
+@app.route('/analytics')
+def analytics():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    analytics_data = memory_mgr.get_customer_analytics(session['user_id'])
+    memory = memory_mgr.load_customer_memory(session['user_id'])
+    recent_convos = memory['conversation_history'][-20:] if memory else []
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Analytics</title>
+        <style>
+            body {{ font-family: Arial; max-width: 1200px; margin: 40px auto; padding: 20px; }}
+            .stats-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin: 20px 0; }}
+            .stat-card {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }}
+            .stat-number {{ font-size: 2.5em; font-weight: bold; color: #007cba; }}
+            .activity-log {{ background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; }}
+        </style>
+    </head>
+    <body>
+        <h1>Analytics - {session['business_name']}</h1>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">{analytics_data['total_conversations']}</div>
+                <div>Conversations</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{analytics_data['total_messages']}</div>
+                <div>Messages</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{analytics_data['total_calls']}</div>
+                <div>Calls</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{analytics_data['leads_captured']}</div>
+                <div>Leads</div>
+            </div>
+        </div>
+        
+        <h2>Recent Activity</h2>
+        {"".join([f'''
+        <div class="activity-log">
+            <strong>{convo.get('timestamp', 'N/A')[:19]}</strong> - 
+            {convo.get('type', 'N/A').upper()} from {convo.get('from', 'N/A')}
+            <br>
+            <em>{convo.get('content', 'N/A')[:100]}...</em>
+        </div>
+        ''' for convo in recent_convos])}
+        
+        <p><a href="/dashboard">Back to Dashboard</a></p>
+    </body>
+    </html>
+    '''
+
+# ==================== PRICING ====================
 @app.route('/pricing')
 def pricing():
     if 'user_id' not in session:
@@ -1301,13 +1280,12 @@ def pricing():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Pricing - LeaX</title>
+        <title>Pricing</title>
         <style>
             body { font-family: Arial; max-width: 800px; margin: 40px auto; padding: 20px; }
             .pricing-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin: 40px 0; }
             .plan { border: 1px solid #ddd; padding: 30px; border-radius: 10px; text-align: center; }
-            .btn { background: #007cba; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; }
-            .pro { border-color: #007cba; background: #f0f8ff; }
+            .btn { background: #007cba; color: white; padding: 15px 30px; border-radius: 5px; border: none; cursor: pointer; }
         </style>
     </head>
     <body>
@@ -1318,149 +1296,56 @@ def pricing():
                 <h3>Starter</h3>
                 <h2>$29.99/month</h2>
                 <ul style="text-align: left;">
-                    <li>GPT-3.5 Turbo AI</li>
-                    <li>Unlimited messages</li>
-                    <li>Basic customization</li>
-                    <li>Email support</li>
+                    <li>GPT-4 AI Agent</li>
+                    <li>Sounds Human</li>
+                    <li>Unlimited messages/calls</li>
+                    <li>Lead tracking</li>
                 </ul>
-                <button onclick="selectPlan('starter')" class="btn">Select Starter</button>
+                <button onclick="alert('Contact us to activate')" class="btn">Select</button>
             </div>
             
-            <div class="plan pro">
+            <div class="plan" style="border-color: #007cba; background: #f0f8ff;">
                 <h3>Professional</h3>
                 <h2>$59.99/month</h2>
                 <ul style="text-align: left;">
-                    <li>GPT-4 AI</li>
-                    <li>Unlimited messages</li>
-                    <li>Advanced customization</li>
+                    <li>Everything in Starter</li>
                     <li>Priority support</li>
+                    <li>Custom training</li>
+                    <li>Advanced analytics</li>
                 </ul>
-                <button onclick="selectPlan('pro')" class="btn">Select Pro</button>
+                <button onclick="alert('Contact us to activate')" class="btn">Select</button>
             </div>
         </div>
-        
-        <div id="paymentMessage" style="display: none; background: #d4edda; padding: 10px; margin: 20px 0;"></div>
-        
-        <script>
-            function selectPlan(plan) {
-                fetch('/create-payment', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({plan: plan})
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.approval_url) {
-                        window.location.href = data.approval_url;
-                    } else {
-                        document.getElementById('paymentMessage').style.display = 'block';
-                        document.getElementById('paymentMessage').textContent = 'Payment setup failed';
-                        document.getElementById('paymentMessage').style.background = '#f8d7da';
-                    }
-                });
-            }
-        </script>
         
         <p><a href="/dashboard">Back to Dashboard</a></p>
     </body>
     </html>
     '''
 
-@app.route('/create-payment', methods=['POST'])
-def create_payment():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not logged in'})
-    
-    plan = request.json.get('plan', 'starter')
-    
-    payment = paypalrestsdk.Payment({
-        "intent": "sale",
-        "payer": {"payment_method": "paypal"},
-        "redirect_urls": {
-            "return_url": url_for('payment_success', _external=True),
-            "cancel_url": url_for('payment_cancel', _external=True)
-        },
-        "transactions": [{
-            "amount": {
-                "total": "29.99" if plan == 'starter' else "59.99",
-                "currency": "USD"
-            },
-            "description": f"LeaX {plan.title()} Plan"
-        }]
-    })
-    
-    if payment.create():
-        session['payment_plan'] = plan
-        for link in payment.links:
-            if link.rel == "approval_url":
-                return jsonify({'approval_url': link.href})
-    
-    return jsonify({'error': 'Payment creation failed'})
-
-@app.route('/payment/success')
-def payment_success():
-    payment_id = request.args.get('paymentId')
-    payer_id = request.args.get('PayerID')
-    
-    payment = paypalrestsdk.Payment.find(payment_id)
-    if payment.execute({"payer_id": payer_id}):
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute('UPDATE users SET status = ?, plan_type = ? WHERE id = ?', 
-                     ('active', session.get('payment_plan', 'starter'), session['user_id']))
-            conn.commit()
-        
-        send_comprehensive_lead_email(
-            {
-                'phone_number': 'Payment System',
-                'project_type': 'Plan Upgrade',
-                'urgency': 'low',
-                'business_name': session.get('business_name'),
-                'lead_score': 5,
-                'status': 'upgrade',
-                'needs_analysis': f'User upgraded to {session.get("payment_plan")} plan',
-                'next_steps': 'Activate premium features'
-            },
-            [],
-            {'business_name': session.get('business_name')}
-        )
-        
-        flash('Payment successful! Your AI agent is now active.')
-        return redirect(url_for('dashboard'))
-    
-    flash('Payment failed')
-    return redirect(url_for('pricing'))
-
-@app.route('/payment/cancel')
-def payment_cancel():
-    flash('Payment was cancelled')
-    return redirect(url_for('pricing'))
-
 # ==================== ADMIN ====================
 @app.route('/admin')
 def admin():
     with get_db() as conn:
         c = conn.cursor()
-        c.execute('SELECT COUNT(*) as total_users FROM users')
-        total_users = c.fetchone()['total_users']
+        c.execute('SELECT COUNT(*) as total FROM users')
+        total_users = c.fetchone()['total']
         
-        c.execute('SELECT COUNT(*) as paid_users FROM users WHERE status != "trial"')
-        paid_users = c.fetchone()['paid_users']
-        
-        c.execute('SELECT COUNT(*) as total_leads FROM leads')
-        total_leads = c.fetchone()['total_leads']
+        c.execute('SELECT COUNT(*) as paid FROM users WHERE status != "trial"')
+        paid_users = c.fetchone()['paid']
         
         c.execute('SELECT * FROM users ORDER BY created_at DESC LIMIT 10')
         recent_users = [dict(row) for row in c.fetchall()]
+    
+    platform_stats = memory_mgr.get_total_usage_stats()
     
     return f'''
     <!DOCTYPE html>
     <html>
     <head>
-        <title>LeaX Admin</title>
+        <title>Admin</title>
         <style>
             body {{ font-family: Arial; margin: 20px; }}
-            .stats {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 20px 0; }}
+            .stats {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin: 20px 0; }}
             .stat-card {{ background: #f5f5f5; padding: 20px; border-radius: 8px; text-align: center; }}
             .stat-number {{ font-size: 2em; font-weight: bold; }}
             table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
@@ -1469,7 +1354,7 @@ def admin():
         </style>
     </head>
     <body>
-        <h1>LeaX Platform Admin</h1>
+        <h1>LeaX Admin</h1>
         
         <div class="stats">
             <div class="stat-card">
@@ -1481,8 +1366,12 @@ def admin():
                 <div>Paid Users</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">{total_leads}</div>
-                <div>Total Leads</div>
+                <div class="stat-number">{platform_stats['total_conversations']}</div>
+                <div>Conversations</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">${platform_stats['total_cost_usd']:.2f}</div>
+                <div>API Costs</div>
             </div>
         </div>
 
@@ -1506,13 +1395,16 @@ def admin():
             ''' for user in recent_users)}
         </table>
 
-        <p><a href="/">Back to Site</a></p>
+        <p><a href="/">Back</a></p>
     </body>
     </html>
     '''
 
+# ==================== RUN ====================
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    logging.info(f"LeaX Platform Starting - Database: {DATABASE_FILE}")
+    logging.info(f"🚀 LeaX Starting - Database: {DATABASE_FILE}")
+    logging.info(f"✅ Memory Manager Initialized")
+    logging.info(f"✅ HUMAN AI Responses Active")
     
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
