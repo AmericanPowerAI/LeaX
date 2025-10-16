@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test AI Agent - LeaX</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #8b5cf6;
+            --success: #10b981;
+            --dark: #0f172a;
+            --light: #f8fafc;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .bg-animated {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+
+        .bg-animated::before,
+        .bg-animated::after {
+            content: '';
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(255,255,255,0.1), transparent 70%);
+            animation: float 20s infinite ease-in-out;
+        }
+
+        .bg-animated::after {
+            animation-duration: 25s;
+            animation-direction: reverse;
+            bottom: -100px;
+            right: -100px;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(100px, -100px) rotate(120deg); }
+            66% { transform: translate(-100px, 100px) rotate(240deg); }
+        }
+
+        /* Navigation */
+        nav {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            padding: 20px 40px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-links a {
+            margin: 0 15px;
+            color: var(--dark);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        /* Device Switcher */
+        .device-switcher {
+            position: fixed;
+            top: 100px;
+            right: 30px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 15px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            z-index: 999;
+        }
+
+        .device-btn {
+            width: 50px;
+            height: 50px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin: 10px 0;
+            transition: all 0.3s;
+        }
+
+        .device-btn:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            transform: scale(1.1);
+        }
+
+        .device-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        /* Container */
+        .container {
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: calc(100vh - 80px);
+        }
+
+        /* iPhone Frame */
+        .iphone-frame {
+            width: 375px;
+            height: 812px;
+            background: #1a1a1a;
+            border-radius: 50px;
+            padding: 15px;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.3);
+            position: relative;
+            display: none;
+        }
+
+        .iphone-frame.active {
+            display: block;
+        }
+
+        .iphone-notch {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120px;
+            height: 20px;
+            background: #000;
+            border-radius: 0 0 15px 15px;
+            z-index: 10;
+        }
+
+        .iphone-screen {
+            width: 100%;
+            height: 100%;
+            background: white;
+            border-radius: 38px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Tablet Frame */
+        .tablet-frame {
+            width: 768px;
+            height: 900px;
+            background: #1a1a1a;
+            border-radius: 30px;
+            padding: 20px;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.3);
+            display: none;
+        }
+
+        .tablet-frame.active {
+            display: block;
+        }
+
+        .tablet-screen {
+            width: 100%;
+            height: 100%;
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Desktop Frame */
+        .desktop-frame {
+            width: 100%;
+            max-width: 1200px;
+            min-height: 800px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.2);
+            display: none;
+            padding: 40px;
+        }
+
+        .desktop-frame.active {
+            display: block;
+        }
+
+        /* Chat Interface (works in all devices) */
+        .chat-header {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .chat-header h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .chat-status {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin: 15px 0;
+            display: flex;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message-bubble {
+            max-width: 70%;
+            padding: 12px 18px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.agent .message-bubble {
+            background: white;
+            color: var(--dark);
+            border: 1px solid #e2e8f0;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-time {
+            font-size: 11px;
+            opacity: 0.6;
+            margin-top: 5px;
+        }
+
+        /* Typing Indicator */
+        .typing-indicator {
+            display: none;
+            padding: 12px 18px;
+            background: white;
+            border-radius: 18px;
+            width: 60px;
+        }
+
+        .typing-indicator.active {
+            display: block;
+        }
+
+        .typing-indicator span {
+            height: 8px;
+            width: 8px;
+            background: #94a3b8;
+            border-radius: 50%;
+            display: inline-block;
+            margin: 0 2px;
+            animation: bounce 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes bounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        /* Input Area */
+        .chat-input {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 12px 18px;
+            border: 2px solid #e2e8f0;
+            border-radius: 25px;
+            font-size: 15px;
+            font-family: 'Inter', sans-serif;
+            transition: border-color 0.3s;
+        }
+
+        .chat-input input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .send-btn {
+            width: 50px;
+            height: 50px;
+            border: none;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+
+        .send-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .send-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Example Prompts */
+        .example-prompts {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .example-prompts h3 {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 10px;
+        }
+
+        .prompt-chip {
+            display: inline-block;
+            background: white;
+            padding: 8px 15px;
+            margin: 5px;
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s;
+        }
+
+        .prompt-chip:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .device-switcher {
+                display: none;
+            }
+
+            .iphone-frame {
+                width: 100%;
+                max-width: 400px;
+                height: auto;
+                min-height: 600px;
+                display: block !important;
+            }
+
+            .tablet-frame,
+            .desktop-frame {
+                display: none !important;
+            }
+
+            nav {
+                padding: 15px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animated"></div>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="logo">
+            <i class="fas fa-robot"></i> LeaX AI
+        </div>
+        <div class="nav-links">
+            <a href="/dashboard"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
+        </div>
+    </nav>
+
+    <!-- Device Switcher -->
+    <div class="device-switcher">
+        <button class="device-btn active" onclick="switchDevice('iphone')" title="iPhone View">
+            <i class="fas fa-mobile-alt"></i>
+        </button>
+        <button class="device-btn" onclick="switchDevice('tablet')" title="Tablet View">
+            <i class="fas fa-tablet-alt"></i>
+        </button>
+        <button class="device-btn" onclick="switchDevice('desktop')" title="Desktop View">
+            <i class="fas fa-desktop"></i>
+        </button>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- iPhone Frame -->
+        <div class="iphone-frame active">
+            <div class="iphone-notch"></div>
+            <div class="iphone-screen">
+                <div class="chat-header">
+                    <h2>{{ session.business_name }} AI Agent</h2>
+                    <div class="chat-status"><i class="fas fa-circle" style="color: #10b981;"></i> Online</div>
+                </div>
+
+                <div class="example-prompts">
+                    <h3>Try these examples:</h3>
+                    <span class="prompt-chip" onclick="sendExample('I need 10 fixtures and end caps built how fast can you get it done?')">
+                        10 fixtures needed
+                    </span>
+                    <span class="prompt-chip" onclick="sendExample('Do you do electrical work?')">
+                        Electrical work
+                    </span>
+                    <span class="prompt-chip" onclick="sendExample('How much for a service call?')">
+                        Service call pricing
+                    </span>
+                </div>
+
+                <div class="chat-messages" id="chatMessages"></div>
+
+                <div class="typing-indicator" id="typingIndicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+
+                <div class="chat-input">
+                    <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+                    <button class="send-btn" onclick="sendMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tablet Frame -->
+        <div class="tablet-frame">
+            <div class="tablet-screen">
+                <div class="chat-header">
+                    <h2>{{ session.business_name }} AI Agent</h2>
+                    <div class="chat-status"><i class="fas fa-circle" style="color: #10b981;"></i> Online</div>
+                </div>
+
+                <div class="example-prompts">
+                    <h3>Try these examples:</h3>
+                    <span class="prompt-chip" onclick="sendExample('I need 10 fixtures and end caps built how fast can you get it done?')">10 fixtures needed</span>
+                    <span class="prompt-chip" onclick="sendExample('Do you do electrical work?')">Electrical work</span>
+                    <span class="prompt-chip" onclick="sendExample('How much for a service call?')">Service call pricing</span>
+                </div>
+
+                <div class="chat-messages" id="chatMessagesTablet"></div>
+
+                <div class="typing-indicator" id="typingIndicatorTablet">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+
+                <div class="chat-input">
+                    <input type="text" id="messageInputTablet" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+                    <button class="send-btn" onclick="sendMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Desktop Frame -->
+        <div class="desktop-frame">
+            <div style="display: flex; flex-direction: column; height: 100%;">
+                <div class="chat-header" style="border-radius: 12px 12px 0 0;">
+                    <h2>{{ session.business_name }} AI Agent - Desktop Mode</h2>
+                    <div class="chat-status"><i class="fas fa-circle" style="color: #10b981;"></i> Online</div>
+                </div>
+
+                <div class="example-prompts">
+                    <h3>Try these examples:</h3>
+                    <span class="prompt-chip" onclick="sendExample('I need 10 fixtures and end caps built how fast can you get it done?')">10 fixtures needed</span>
+                    <span class="prompt-chip" onclick="sendExample('Do you do electrical work?')">Electrical work</span>
+                    <span class="prompt-chip" onclick="sendExample('How much for a service call?')">Service call pricing</span>
+                </div>
+
+                <div class="chat-messages" id="chatMessagesDesktop" style="flex: 1;"></div>
+
+                <div class="typing-indicator" id="typingIndicatorDesktop" style="margin: 0 20px;">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+
+                <div class="chat-input">
+                    <input type="text" id="messageInputDesktop" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+                    <button class="send-btn" onclick="sendMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentDevice = 'iphone';
+
+        function switchDevice(device) {
+            currentDevice = device;
+
+            // Hide all frames
+            document.querySelectorAll('.iphone-frame, .tablet-frame, .desktop-frame').forEach(frame => {
+                frame.classList.remove('active');
+            });
+
+            // Remove active from all buttons
+            document.querySelectorAll('.device-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Show selected frame
+            if (device === 'iphone') {
+                document.querySelector('.iphone-frame').classList.add('active');
+                document.querySelectorAll('.device-btn')[0].classList.add('active');
+            } else if (device === 'tablet') {
+                document.querySelector('.tablet-frame').classList.add('active');
+                document.querySelectorAll('.device-btn')[1].classList.add('active');
+            } else if (device === 'desktop') {
+                document.querySelector('.desktop-frame').classList.add('active');
+                document.querySelectorAll('.device-btn')[2].classList.add('active');
+            }
+        }
+
+        function getActiveElements() {
+            if (currentDevice === 'iphone') {
+                return {
+                    messages: document.getElementById('chatMessages'),
+                    input: document.getElementById('messageInput'),
+                    typing: document.getElementById('typingIndicator')
+                };
+            } else if (currentDevice === 'tablet') {
+                return {
+                    messages: document.getElementById('chatMessagesTablet'),
+                    input: document.getElementById('messageInputTablet'),
+                    typing: document.getElementById('typingIndicatorTablet')
+                };
+            } else {
+                return {
+                    messages: document.getElementById('chatMessagesDesktop'),
+                    input: document.getElementById('messageInputDesktop'),
+                    typing: document.getElementById('typingIndicatorDesktop')
+                };
+            }
+        }
+
+        function addMessage(text, isUser) {
+            const elements = getActiveElements();
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'agent'}`;
+            
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            bubble.textContent = text;
+            
+            messageDiv.appendChild(bubble);
+            elements.messages.appendChild(messageDiv);
+            elements.messages.scrollTop = elements.messages.scrollHeight;
+        }
+
+        function sendExample(text) {
+            const elements = getActiveElements();
+            elements.input.value = text;
+            sendMessage();
+        }
+
+        function sendMessage() {
+            const elements = getActiveElements();
+            const message = elements.input.value.trim();
+            
+            if (!message) return;
+            
+            addMessage(message, true);
+            elements.input.value = '';
+            
+            // Show typing indicator
+            elements.typing.classList.add('active');
+            
+            fetch('/api/test-chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: message})
+            })
+            .then(response => response.json())
+            .then(data => {
+                elements.typing.classList.remove('active');
+                addMessage(data.reply, false);
+            })
+            .catch(error => {
+                elements.typing.classList.remove('active');
+                addMessage('Sorry, there was an error. Please try again.', false);
+            });
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+    </script>
+</body>
+</html>
