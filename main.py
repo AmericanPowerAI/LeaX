@@ -827,72 +827,7 @@ def test_agent():
         c.execute('UPDATE users SET trial_uses = trial_uses + 1 WHERE id = ?', (session['user_id'],))
         conn.commit()
     
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Test Agent</title>
-        <style>
-            body { font-family: Arial; max-width: 600px; margin: 40px auto; padding: 20px; }
-            #chat { border: 1px solid #ddd; height: 400px; overflow-y: scroll; padding: 10px; margin: 20px 0; background: #f8f9fa; }
-            .message { margin: 10px 0; padding: 10px; border-radius: 5px; max-width: 80%; }
-            .user { background: #007cba; color: white; margin-left: 20%; }
-            .agent { background: white; margin-right: 20%; border: 1px solid #ddd; }
-            #inputContainer { display: flex; gap: 10px; }
-            input { flex: 1; padding: 10px; }
-            button { padding: 10px 20px; background: #007cba; color: white; border: none; cursor: pointer; border-radius: 5px; }
-        </style>
-    </head>
-    <body>
-        <h2>Test Your AI Agent</h2>
-        <p><strong>Try this:</strong> "I need 10 fixtures and end caps built how fast can you get it done?"</p>
-        
-        <div id="chat"></div>
-        
-        <div id="inputContainer">
-            <input type="text" id="messageInput" placeholder="Type a message...">
-            <button onclick="sendMessage()">Send</button>
-        </div>
-        
-        <script>
-            function addMessage(text, isUser) {
-                const chat = document.getElementById('chat');
-                const message = document.createElement('div');
-                message.className = 'message ' + (isUser ? 'user' : 'agent');
-                message.textContent = text;
-                chat.appendChild(message);
-                chat.scrollTop = chat.scrollHeight;
-            }
-            
-            function sendMessage() {
-                const input = document.getElementById('messageInput');
-                const message = input.value.trim();
-                
-                if (message) {
-                    addMessage(message, true);
-                    input.value = '';
-                    
-                    fetch('/api/test-chat', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({message: message})
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        addMessage(data.reply, false);
-                    });
-                }
-            }
-            
-            document.getElementById('messageInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') sendMessage();
-            });
-        </script>
-        
-        <p><a href="/dashboard">Back to Dashboard</a></p>
-    </body>
-    </html>
-    '''
+    return render_template('test_agent_modern.html')
 
 @app.route('/api/test-chat', methods=['POST'])
 def test_chat():
