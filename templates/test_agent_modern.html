@@ -405,17 +405,61 @@
             cursor: not-allowed;
         }
 
-        /* Example Prompts */
+        /* Example Prompts - COLLAPSIBLE */
         .example-prompts {
-            padding: 20px;
+            padding: 15px 20px;
             background: #f8f9fa;
             border-bottom: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+            max-height: 200px;
+            overflow: hidden;
         }
 
-        .example-prompts h3 {
+        .example-prompts.collapsed {
+            max-height: 50px;
+            padding: 10px 20px;
+        }
+
+        .example-prompts-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .example-prompts-header h3 {
             font-size: 14px;
             color: #64748b;
-            margin-bottom: 10px;
+            margin: 0;
+        }
+
+        .toggle-prompts-btn {
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            font-size: 20px;
+            cursor: pointer;
+            transition: transform 0.3s;
+            padding: 5px;
+        }
+
+        .toggle-prompts-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .example-prompts.collapsed .toggle-prompts-btn {
+            transform: rotate(180deg);
+        }
+
+        .prompts-content {
+            margin-top: 10px;
+            transition: opacity 0.3s;
+        }
+
+        .example-prompts.collapsed .prompts-content {
+            opacity: 0;
+            pointer-events: none;
         }
 
         .prompt-chip {
@@ -534,17 +578,24 @@
                     <div class="chat-status"><i class="fas fa-circle" style="color: #10b981;"></i> Online</div>
                 </div>
 
-                <div class="example-prompts">
-                    <h3>Try these examples:</h3>
-                    {% for example in examples %}
-                    <span class="prompt-chip" onclick="sendExample('{{ example }}')">
-                        {{ example }}
-                    </span>
-                    {% endfor %}
-                    <br>
-                    <button class="clear-chat-btn" onclick="clearChat()">
-                        <i class="fas fa-trash"></i> Clear Chat
-                    </button>
+                <div class="example-prompts" id="examplePrompts">
+                    <div class="example-prompts-header" onclick="togglePrompts()">
+                        <h3>💬 Try these examples:</h3>
+                        <button class="toggle-prompts-btn">
+                            <i class="fas fa-chevron-up"></i>
+                        </button>
+                    </div>
+                    <div class="prompts-content">
+                        {% for example in examples %}
+                        <span class="prompt-chip" onclick="sendExample('{{ example }}')">
+                            {{ example }}
+                        </span>
+                        {% endfor %}
+                        <br>
+                        <button class="clear-chat-btn" onclick="clearChat()">
+                            <i class="fas fa-trash"></i> Clear Chat
+                        </button>
+                    </div>
                 </div>
 
                 <div class="chat-messages" id="chatMessages"></div>
@@ -576,15 +627,22 @@
                     <div class="chat-status"><i class="fas fa-circle" style="color: #10b981;"></i> Online</div>
                 </div>
 
-                <div class="example-prompts">
-                    <h3>Try these examples:</h3>
-                    {% for example in examples %}
-                    <span class="prompt-chip" onclick="sendExample('{{ example }}')">{{ example }}</span>
-                    {% endfor %}
-                    <br>
-                    <button class="clear-chat-btn" onclick="clearChat()">
-                        <i class="fas fa-trash"></i> Clear Chat
-                    </button>
+                <div class="example-prompts" id="examplePromptsTablet">
+                    <div class="example-prompts-header" onclick="togglePrompts()">
+                        <h3>💬 Try these examples:</h3>
+                        <button class="toggle-prompts-btn">
+                            <i class="fas fa-chevron-up"></i>
+                        </button>
+                    </div>
+                    <div class="prompts-content">
+                        {% for example in examples %}
+                        <span class="prompt-chip" onclick="sendExample('{{ example }}')">{{ example }}</span>
+                        {% endfor %}
+                        <br>
+                        <button class="clear-chat-btn" onclick="clearChat()">
+                            <i class="fas fa-trash"></i> Clear Chat
+                        </button>
+                    </div>
                 </div>
 
                 <div class="chat-messages" id="chatMessagesTablet"></div>
@@ -616,15 +674,22 @@
                     <div class="chat-status"><i class="fas fa-circle" style="color: #10b981;"></i> Online</div>
                 </div>
 
-                <div class="example-prompts">
-                    <h3>Try these examples:</h3>
-                    {% for example in examples %}
-                    <span class="prompt-chip" onclick="sendExample('{{ example }}')">{{ example }}</span>
-                    {% endfor %}
-                    <br>
-                    <button class="clear-chat-btn" onclick="clearChat()">
-                        <i class="fas fa-trash"></i> Clear Chat
-                    </button>
+                <div class="example-prompts" id="examplePromptsDesktop">
+                    <div class="example-prompts-header" onclick="togglePrompts()">
+                        <h3>💬 Try these examples:</h3>
+                        <button class="toggle-prompts-btn">
+                            <i class="fas fa-chevron-up"></i>
+                        </button>
+                    </div>
+                    <div class="prompts-content">
+                        {% for example in examples %}
+                        <span class="prompt-chip" onclick="sendExample('{{ example }}')">{{ example }}</span>
+                        {% endfor %}
+                        <br>
+                        <button class="clear-chat-btn" onclick="clearChat()">
+                            <i class="fas fa-trash"></i> Clear Chat
+                        </button>
+                    </div>
                 </div>
 
                 <div class="chat-messages" id="chatMessagesDesktop" style="flex: 1;"></div>
@@ -672,6 +737,14 @@
                 document.querySelector('.desktop-frame').classList.add('active');
                 document.querySelectorAll('.device-btn')[2].classList.add('active');
             }
+        }
+
+        function togglePrompts() {
+            // Get all prompt sections
+            const sections = document.querySelectorAll('.example-prompts');
+            sections.forEach(section => {
+                section.classList.toggle('collapsed');
+            });
         }
 
         function getActiveElements() {
