@@ -92,6 +92,16 @@
             color: var(--primary);
         }
 
+        .trial-badge {
+            background: #ffc107;
+            color: #000;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-left: 15px;
+        }
+
         /* Device Switcher */
         .device-switcher {
             position: fixed;
@@ -221,7 +231,22 @@
             display: block;
         }
 
-        /* Chat Interface (works in all devices) */
+        /* Info Banner */
+        .info-banner {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .info-banner strong {
+            font-weight: 600;
+        }
+
+        /* Chat Interface */
         .chat-header {
             background: linear-gradient(135deg, var(--primary), var(--secondary));
             color: white;
@@ -301,6 +326,7 @@
             background: white;
             border-radius: 18px;
             width: 60px;
+            margin: 0 20px;
         }
 
         .typing-indicator.active {
@@ -366,12 +392,17 @@
             transition: transform 0.3s;
         }
 
-        .send-btn:hover {
+        .send-btn:hover:not(:disabled) {
             transform: scale(1.1);
         }
 
-        .send-btn:active {
+        .send-btn:active:not(:disabled) {
             transform: scale(0.95);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         /* Example Prompts */
@@ -406,6 +437,24 @@
             transform: translateY(-2px);
         }
 
+        /* Clear Chat Button */
+        .clear-chat-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+
+        .clear-chat-btn:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+
         /* Mobile Responsive */
         @media (max-width: 768px) {
             .device-switcher {
@@ -428,6 +477,15 @@
             nav {
                 padding: 15px 20px;
             }
+
+            .logo {
+                font-size: 24px;
+            }
+
+            .trial-badge {
+                font-size: 11px;
+                padding: 6px 12px;
+            }
         }
     </style>
 </head>
@@ -441,6 +499,9 @@
         </div>
         <div class="nav-links">
             <a href="/dashboard"><i class="fas fa-home"></i> Dashboard</a>
+            {% if trials_remaining %}
+            <span class="trial-badge">🎁 {{ trials_remaining }} tests left</span>
+            {% endif %}
             <a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
         </div>
     </nav>
@@ -464,6 +525,10 @@
         <div class="iphone-frame active">
             <div class="iphone-notch"></div>
             <div class="iphone-screen">
+                <div class="info-banner">
+                    💡 <strong>This is how customers will chat with your AI.</strong> Try asking about your services!
+                </div>
+
                 <div class="chat-header">
                     <h2>{{ session.business_name }} AI Agent</h2>
                     <div class="chat-status"><i class="fas fa-circle" style="color: #10b981;"></i> Online</div>
@@ -471,15 +536,15 @@
 
                 <div class="example-prompts">
                     <h3>Try these examples:</h3>
-                    <span class="prompt-chip" onclick="sendExample('I need 10 fixtures and end caps built how fast can you get it done?')">
-                        10 fixtures needed
+                    {% for example in examples %}
+                    <span class="prompt-chip" onclick="sendExample('{{ example }}')">
+                        {{ example }}
                     </span>
-                    <span class="prompt-chip" onclick="sendExample('Do you do electrical work?')">
-                        Electrical work
-                    </span>
-                    <span class="prompt-chip" onclick="sendExample('How much for a service call?')">
-                        Service call pricing
-                    </span>
+                    {% endfor %}
+                    <br>
+                    <button class="clear-chat-btn" onclick="clearChat()">
+                        <i class="fas fa-trash"></i> Clear Chat
+                    </button>
                 </div>
 
                 <div class="chat-messages" id="chatMessages"></div>
@@ -492,7 +557,7 @@
 
                 <div class="chat-input">
                     <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
-                    <button class="send-btn" onclick="sendMessage()">
+                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
                         <i class="fas fa-paper-plane"></i>
                     </button>
                 </div>
@@ -502,6 +567,10 @@
         <!-- Tablet Frame -->
         <div class="tablet-frame">
             <div class="tablet-screen">
+                <div class="info-banner">
+                    💡 <strong>This is how customers will chat with your AI.</strong> Try asking about your services!
+                </div>
+
                 <div class="chat-header">
                     <h2>{{ session.business_name }} AI Agent</h2>
                     <div class="chat-status"><i class="fas fa-circle" style="color: #10b981;"></i> Online</div>
@@ -509,9 +578,13 @@
 
                 <div class="example-prompts">
                     <h3>Try these examples:</h3>
-                    <span class="prompt-chip" onclick="sendExample('I need 10 fixtures and end caps built how fast can you get it done?')">10 fixtures needed</span>
-                    <span class="prompt-chip" onclick="sendExample('Do you do electrical work?')">Electrical work</span>
-                    <span class="prompt-chip" onclick="sendExample('How much for a service call?')">Service call pricing</span>
+                    {% for example in examples %}
+                    <span class="prompt-chip" onclick="sendExample('{{ example }}')">{{ example }}</span>
+                    {% endfor %}
+                    <br>
+                    <button class="clear-chat-btn" onclick="clearChat()">
+                        <i class="fas fa-trash"></i> Clear Chat
+                    </button>
                 </div>
 
                 <div class="chat-messages" id="chatMessagesTablet"></div>
@@ -524,7 +597,7 @@
 
                 <div class="chat-input">
                     <input type="text" id="messageInputTablet" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
-                    <button class="send-btn" onclick="sendMessage()">
+                    <button class="send-btn" id="sendBtnTablet" onclick="sendMessage()">
                         <i class="fas fa-paper-plane"></i>
                     </button>
                 </div>
@@ -534,6 +607,10 @@
         <!-- Desktop Frame -->
         <div class="desktop-frame">
             <div style="display: flex; flex-direction: column; height: 100%;">
+                <div class="info-banner" style="border-radius: 12px; margin-bottom: 20px;">
+                    💡 <strong>This is how customers will chat with your AI.</strong> Try asking about your services!
+                </div>
+
                 <div class="chat-header" style="border-radius: 12px 12px 0 0;">
                     <h2>{{ session.business_name }} AI Agent - Desktop Mode</h2>
                     <div class="chat-status"><i class="fas fa-circle" style="color: #10b981;"></i> Online</div>
@@ -541,14 +618,18 @@
 
                 <div class="example-prompts">
                     <h3>Try these examples:</h3>
-                    <span class="prompt-chip" onclick="sendExample('I need 10 fixtures and end caps built how fast can you get it done?')">10 fixtures needed</span>
-                    <span class="prompt-chip" onclick="sendExample('Do you do electrical work?')">Electrical work</span>
-                    <span class="prompt-chip" onclick="sendExample('How much for a service call?')">Service call pricing</span>
+                    {% for example in examples %}
+                    <span class="prompt-chip" onclick="sendExample('{{ example }}')">{{ example }}</span>
+                    {% endfor %}
+                    <br>
+                    <button class="clear-chat-btn" onclick="clearChat()">
+                        <i class="fas fa-trash"></i> Clear Chat
+                    </button>
                 </div>
 
                 <div class="chat-messages" id="chatMessagesDesktop" style="flex: 1;"></div>
 
-                <div class="typing-indicator" id="typingIndicatorDesktop" style="margin: 0 20px;">
+                <div class="typing-indicator" id="typingIndicatorDesktop">
                     <span></span>
                     <span></span>
                     <span></span>
@@ -556,7 +637,7 @@
 
                 <div class="chat-input">
                     <input type="text" id="messageInputDesktop" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
-                    <button class="send-btn" onclick="sendMessage()">
+                    <button class="send-btn" id="sendBtnDesktop" onclick="sendMessage()">
                         <i class="fas fa-paper-plane"></i>
                     </button>
                 </div>
@@ -598,19 +679,22 @@
                 return {
                     messages: document.getElementById('chatMessages'),
                     input: document.getElementById('messageInput'),
-                    typing: document.getElementById('typingIndicator')
+                    typing: document.getElementById('typingIndicator'),
+                    sendBtn: document.getElementById('sendBtn')
                 };
             } else if (currentDevice === 'tablet') {
                 return {
                     messages: document.getElementById('chatMessagesTablet'),
                     input: document.getElementById('messageInputTablet'),
-                    typing: document.getElementById('typingIndicatorTablet')
+                    typing: document.getElementById('typingIndicatorTablet'),
+                    sendBtn: document.getElementById('sendBtnTablet')
                 };
             } else {
                 return {
                     messages: document.getElementById('chatMessagesDesktop'),
                     input: document.getElementById('messageInputDesktop'),
-                    typing: document.getElementById('typingIndicatorDesktop')
+                    typing: document.getElementById('typingIndicatorDesktop'),
+                    sendBtn: document.getElementById('sendBtnDesktop')
                 };
             }
         }
@@ -641,11 +725,16 @@
             
             if (!message) return;
             
+            // Disable send button
+            elements.sendBtn.disabled = true;
+            
             addMessage(message, true);
             elements.input.value = '';
             
-            // Show typing indicator
-            elements.typing.classList.add('active');
+            // Show typing indicator with delay (more realistic)
+            setTimeout(() => {
+                elements.typing.classList.add('active');
+            }, 500);
             
             fetch('/api/test-chat', {
                 method: 'POST',
@@ -656,11 +745,21 @@
             .then(data => {
                 elements.typing.classList.remove('active');
                 addMessage(data.reply, false);
+                elements.sendBtn.disabled = false;
             })
             .catch(error => {
                 elements.typing.classList.remove('active');
                 addMessage('Sorry, there was an error. Please try again.', false);
+                elements.sendBtn.disabled = false;
             });
+        }
+
+        function clearChat() {
+            if (confirm('Clear all messages?')) {
+                document.querySelectorAll('.chat-messages').forEach(el => {
+                    el.innerHTML = '';
+                });
+            }
         }
 
         function handleKeyPress(event) {
