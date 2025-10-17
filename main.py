@@ -248,7 +248,7 @@ def init_database():
             )
         ''')
         
-        # LEAD CONVERSATIONS
+        # LEAD CONVERSATIONS - Enhanced with sales tracking
         c.execute('''
             CREATE TABLE IF NOT EXISTS lead_conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,6 +260,7 @@ def init_database():
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 intent_detected TEXT,
                 needs_identified TEXT,
+                sale_closed BOOLEAN DEFAULT 0,
                 FOREIGN KEY(lead_id) REFERENCES leads(id) ON DELETE CASCADE,
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )
@@ -560,8 +561,8 @@ def update_lead_conversation(lead_id, user_id, message_text, response_text, inte
 
 def check_for_meeting_info(message, ai_response):
     """Check if meeting was scheduled in conversation"""
-    meeting_indicators = ['meeting', 'appointment', 'schedule', 'tomorrow', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-    time_indicators = ['am', 'pm', 'oclock', "o'clock", ':00', ':30']
+    meeting_indicators = ['meeting', 'appointment', 'schedule', 'tomorrow', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'visit', 'come over', 'send someone', 'technician']
+    time_indicators = ['am', 'pm', 'oclock', "o'clock", ':00', ':30', 'morning', 'afternoon', 'evening']
     
     combined_text = (message + ' ' + ai_response).lower()
     
@@ -569,6 +570,35 @@ def check_for_meeting_info(message, ai_response):
     has_time = any(word in combined_text for word in time_indicators)
     
     return has_meeting_word and has_time
+
+def check_for_sale_closed(message, ai_response):
+    """Check if customer committed to purchase/service"""
+    commitment_indicators = [
+        'yes', 'yeah', 'yep', 'sure', 'ok', 'okay', 'let\'s do it', 'go ahead', 
+        'schedule', 'book it', 'sign me up', 'i\'ll take it', 'sounds good',
+        'that works', 'perfect', 'great', 'deal'
+    ]
+    
+    rejection_indicators = [
+        'no', 'nope', 'nevermind', 'never mind', 'not interested', 'no thanks',
+        'find someone else', 'too expensive', 'too much', 'can\'t afford'
+    ]
+    
+    message_lower = message.lower()
+    
+    # Check for rejection first
+    has_rejection = any(word in message_lower for word in rejection_indicators)
+    if has_rejection:
+        return False
+    
+    # Check for commitment
+    has_commitment = any(word in message_lower for word in commitment_indicators)
+    
+    # Also check if AI asked to schedule and customer didn't reject
+    ai_lower = ai_response.lower()
+    ai_asked_to_schedule = any(phrase in ai_lower for phrase in ['shall we schedule', 'can we schedule', 'would you like to', 'arrange'])
+    
+    return has_commitment or (ai_asked_to_schedule and len(message_lower) > 5 and not has_rejection)
 
 # ==================== 🔥 AI PROMPT WITH WEBSITE CONTEXT ====================
 def generate_human_response(business_name, business_context, customer_message, conversation_history=""):
@@ -1870,6 +1900,11 @@ def test_chat():
     data = request.json
     user_message = data.get('message')
     
+    # SIMULATE HUMAN TYPING DELAY (1-3 seconds based on message length)
+    import time
+    typing_delay = min(3, max(1, len(user_message) * 0.05))  # More realistic
+    time.sleep(typing_delay)
+    
     # Get conversation history from PERSISTENT MEMORY
     conversation_context = memory_mgr.get_conversation_context(
         session['user_id'], 
@@ -1920,9 +1955,11 @@ Website: {business['website_url'] if business and business['website_url'] else '
         'cost': 0
     })
     
-    # Also save to database for quick access
+    # CREATE/UPDATE LEAD FROM TEST CONVERSATIONS TOO
     with get_db() as conn:
         c = conn.cursor()
+        
+        # Save conversation
         c.execute('''
             INSERT INTO conversations (user_id, phone_number, message_text, response_text, message_direction, tokens_used, cost_usd)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1933,11 +1970,89 @@ Website: {business['website_url'] if business and business['website_url'] else '
             VALUES (?, ?, ?, ?, ?)
         ''', (session['user_id'], 'TEST-USER', ai_reply, '', 'outgoing'))
         
+        # CREATE OR UPDATE LEAD
+        c.execute('SELECT * FROM leads WHERE phone_number = ? AND user_id = ?', ('TEST-USER', session['user_id']))
+        existing_lead = c.fetchone()
+        
+        intent_analysis = analyze_customer_intent(user_message)
+        
+        # Detect if sale was closed
+        sale_closed = check_for_sale_closed(user_message, ai_reply)
+        meeting_scheduled = check_for_meeting_info(user_message, ai_reply)
+        
+        if existing_lead:
+            lead_id = existing_lead['id']
+            
+            # Calculate new score
+            has_contact_info = bool(existing_lead['contact_name'] or existing_lead['contact_email'])
+            new_score = calculate_lead_score(intent_analysis, len(user_message), has_contact_info, meeting_scheduled or sale_closed or existing_lead['meeting_scheduled'])
+            
+            updates = []
+            params = []
+            
+            if intent_analysis.get('project_type') != 'general_inquiry':
+                updates.append('project_type = ?')
+                params.append(intent_analysis['project_type'])
+            
+            if intent_analysis.get('urgency') != 'flexible':
+                updates.append('urgency = ?')
+                params.append(intent_analysis['urgency'])
+            
+            if meeting_scheduled or sale_closed:
+                updates.append('meeting_scheduled = 1')
+                if not existing_lead['meeting_scheduled']:
+                    updates.append('meeting_datetime = CURRENT_TIMESTAMP')
+            
+            updates.append('lead_score = ?')
+            params.append(new_score)
+            updates.append('last_contact = CURRENT_TIMESTAMP')
+            updates.append('updated_at = CURRENT_TIMESTAMP')
+            
+            params.append(lead_id)
+            
+            c.execute(f'''
+                UPDATE leads 
+                SET {', '.join(updates)}
+                WHERE id = ?
+            ''', params)
+            
+        else:
+            # CREATE new lead
+            lead_score = calculate_lead_score(intent_analysis, len(user_message), False, meeting_scheduled or sale_closed)
+            
+            c.execute('''
+                INSERT INTO leads 
+                (user_id, phone_number, project_type, urgency, budget, status, lead_score, meeting_scheduled)
+                VALUES (?, ?, ?, ?, ?, 'new', ?, ?)
+            ''', (session['user_id'], 'TEST-USER', 
+                  intent_analysis.get('project_type', 'inquiry'),
+                  intent_analysis.get('urgency', 'flexible'),
+                  intent_analysis.get('potential_budget', 'unknown'),
+                  lead_score,
+                  1 if (meeting_scheduled or sale_closed) else 0))
+            
+            lead_id = c.lastrowid
+        
+        # Log lead conversation
+        c.execute('''
+            INSERT INTO lead_conversations 
+            (lead_id, user_id, message_text, response_text, intent_detected, needs_identified)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (lead_id, session['user_id'], user_message, ai_reply, 
+              json.dumps(intent_analysis), intent_analysis.get('key_requirements', '')))
+        
         conn.commit()
     
-    print(f"✅ Test conversation logged for user {session['user_id']}")
+    # Update memory manager
+    memory_mgr.update_customer_info(session['user_id'], 'TEST-USER', {
+        'last_inquiry': user_message,
+        'meeting_scheduled': meeting_scheduled or sale_closed,
+        'notes': f"Sale closed: {sale_closed}, Meeting: {meeting_scheduled}" if (sale_closed or meeting_scheduled) else None
+    })
     
-    return jsonify({'reply': ai_reply})
+    print(f"✅ Test conversation + LEAD logged for user {session['user_id']}")
+    
+    return jsonify({'reply': ai_reply, 'typing_time': typing_delay})
 
 # ==================== LIVE AGENT ENDPOINT ====================
 @app.route('/agent/<user_id>', methods=['POST'])
@@ -2724,15 +2839,92 @@ def pricing():
                 </div>
             </div>
             
-            <div style="background: white; padding: 30px; border-radius: 15px; margin-top: 40px; box-shadow: 0 5px 20px rgba(0,0,0,0.05);">
-                <h3 style="color: #333; margin-bottom: 15px;">🚀 Setup Instructions</h3>
-                <p style="color: #666; line-height: 1.8;">
-                    <strong>To activate your AI agent:</strong><br>
-                    1. Sign up for a Twilio account at <a href="https://www.twilio.com" target="_blank" style="color: #667eea;">twilio.com</a><br>
-                    2. Purchase a phone number that supports SMS and Voice<br>
-                    3. In Twilio console, set webhook URL to: <code style="background: #f0f0f0; padding: 3px 8px; border-radius: 3px;">your-domain.com/agent/YOUR_USER_ID</code><br>
-                    4. Your AI will automatically start handling calls and texts!<br><br>
-                    <strong>Need help?</strong> Email us at <a href="mailto:hr@americanpower.us" style="color: #667eea;">hr@americanpower.us</a>
+            <div style="background: white; padding: 40px; border-radius: 15px; margin-top: 40px; box-shadow: 0 5px 20px rgba(0,0,0,0.05);">
+                <h3 style="color: #333; margin-bottom: 20px;">🚀 Complete Setup Instructions</h3>
+                
+                <div style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #667eea;">
+                    <h4 style="color: #333; margin-bottom: 10px;">Step 1: Get Your Twilio Phone Number</h4>
+                    <ol style="color: #666; line-height: 2; margin-left: 20px;">
+                        <li>Sign up at <a href="https://www.twilio.com/try-twilio" target="_blank" style="color: #667eea; font-weight: 600;">twilio.com/try-twilio</a> (Free trial available!)</li>
+                        <li>Verify your email and phone number</li>
+                        <li>In Twilio Console, go to <strong>Phone Numbers → Buy a Number</strong></li>
+                        <li>Choose a number that supports <strong>SMS</strong> and <strong>Voice</strong></li>
+                        <li>Recommended: Get an 888 or 800 toll-free number for better customer trust</li>
+                    </ol>
+                </div>
+                
+                <div style="background: #f0fdf4; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #10b981;">
+                    <h4 style="color: #333; margin-bottom: 10px;">Step 2: Connect Your AI Agent</h4>
+                    <ol style="color: #666; line-height: 2; margin-left: 20px;">
+                        <li>In Twilio Console, click on your phone number</li>
+                        <li>Scroll to <strong>Messaging Configuration</strong></li>
+                        <li>Under "A MESSAGE COMES IN", select <strong>Webhook</strong></li>
+                        <li>Enter this URL: <code style="background: #e2e8f0; padding: 4px 10px; border-radius: 5px; color: #333; font-family: monospace;">https://your-domain.com/agent/{session.get('user_id', 'YOUR_USER_ID')}</code></li>
+                        <li>Method: <strong>HTTP POST</strong></li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+                </div>
+                
+                <div style="background: #fef3c7; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #f59e0b;">
+                    <h4 style="color: #333; margin-bottom: 10px;">Step 3: Enable Voice Calls</h4>
+                    <ol style="color: #666; line-height: 2; margin-left: 20px;">
+                        <li>Still in your phone number settings</li>
+                        <li>Scroll to <strong>Voice Configuration</strong></li>
+                        <li>Under "A CALL COMES IN", select <strong>Webhook</strong></li>
+                        <li>Enter the SAME URL: <code style="background: #e2e8f0; padding: 4px 10px; border-radius: 5px; color: #333; font-family: monospace;">https://your-domain.com/agent/{session.get('user_id', 'YOUR_USER_ID')}</code></li>
+                        <li>Method: <strong>HTTP POST</strong></li>
+                        <li>Click <strong>Save</strong></li>
+                    </ol>
+                </div>
+                
+                <div style="background: #fce7f3; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #ec4899;">
+                    <h4 style="color: #333; margin-bottom: 10px;">Step 4: Deploy Your LeaX Server</h4>
+                    <ol style="color: #666; line-height: 2; margin-left: 20px;">
+                        <li><strong>Option A - Quick Deploy (Recommended for Testing):</strong>
+                            <ul style="margin-top: 10px;">
+                                <li>Use <a href="https://replit.com" target="_blank" style="color: #667eea;">Replit.com</a> or <a href="https://glitch.com" target="_blank" style="color: #667eea;">Glitch.com</a></li>
+                                <li>Upload your LeaX files</li>
+                                <li>Set environment variable: <code style="background: #e2e8f0; padding: 2px 8px; border-radius: 3px;">OPENAI_API_KEY=your_key</code></li>
+                                <li>Run the app - you'll get a public URL automatically</li>
+                            </ul>
+                        </li>
+                        <li style="margin-top: 15px;"><strong>Option B - Production Deploy:</strong>
+                            <ul style="margin-top: 10px;">
+                                <li>Deploy to Railway, Heroku, or AWS</li>
+                                <li>Get SSL certificate (required by Twilio)</li>
+                                <li>Set your domain in Twilio webhook</li>
+                            </ul>
+                        </li>
+                    </ol>
+                </div>
+                
+                <div style="background: #e0e7ff; padding: 20px; border-radius: 10px; border-left: 4px solid #667eea;">
+                    <h4 style="color: #333; margin-bottom: 10px;">🎯 Your Webhook URL</h4>
+                    <p style="color: #666; margin-bottom: 15px;">Once deployed, your webhook URL will be:</p>
+                    <div style="background: #1e293b; color: #10b981; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 14px; overflow-x: auto;">
+                        https://YOUR-DOMAIN.com/agent/{session.get('user_id', 'YOUR_USER_ID')}
+                    </div>
+                    <p style="color: #666; margin-top: 15px; font-size: 14px;">
+                        <strong>Note:</strong> Replace <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 3px;">YOUR-DOMAIN.com</code> with your actual domain.
+                        Your User ID is: <strong style="color: #667eea;">{session.get('user_id', 'YOUR_USER_ID')}</strong>
+                    </p>
+                </div>
+                
+                <div style="background: #dcfce7; padding: 20px; border-radius: 10px; margin-top: 20px; text-align: center;">
+                    <h4 style="color: #333; margin-bottom: 10px;">✅ That's It!</h4>
+                    <p style="color: #666; margin-bottom: 15px;">Once connected, your AI will automatically:</p>
+                    <ul style="color: #666; text-align: left; max-width: 500px; margin: 0 auto; line-height: 2;">
+                        <li>✓ Answer all SMS messages instantly</li>
+                        <li>✓ Handle voice calls 24/7</li>
+                        <li>✓ Capture and score leads</li>
+                        <li>✓ Schedule meetings automatically</li>
+                        <li>✓ Email you every new lead</li>
+                    </ul>
+                </div>
+                
+                <p style="color: #666; text-align: center; margin-top: 30px; line-height: 1.8;">
+                    <strong>Need help?</strong> Email us at <a href="mailto:hr@americanpower.us" style="color: #667eea; font-weight: 600;">hr@americanpower.us</a><br>
+                    <strong>Watch Video Tutorial:</strong> <a href="#" style="color: #667eea; font-weight: 600;">Coming Soon</a>
                 </p>
             </div>
         </div>
