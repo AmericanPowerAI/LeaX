@@ -2756,6 +2756,185 @@ def register():
         except sqlite3.IntegrityError:
             flash('Email already exists')
             return redirect(url_for('register'))
+# ==================== PAYPAL CHECKOUT ====================
+@app.route('/checkout/<plan>')
+def checkout(plan):
+    """PayPal checkout page for selected plan"""
+    if plan not in ['basic', 'standard', 'enterprise']:
+        return redirect(url_for('index'))
+    
+    # Plan pricing
+    prices = {
+        'basic': {'amount': '29.99', 'name': 'Basic Plan'},
+        'standard': {'amount': '59.99', 'name': 'Standard Plan'},
+        'enterprise': {'amount': '149.99', 'name': 'Enterprise Plan'}
+    }
+    
+    plan_info = prices[plan]
+    
+    return render_template('checkout.html', 
+                         plan=plan,
+                         plan_name=plan_info['name'],
+                         amount=plan_info['amount'])
+
+@app.route('/paypal/create-payment', methods=['POST'])
+def create_payment():
+    """Create PayPal payment"""
+    try:
+        data = request.json
+        plan = data.get('plan')
+        email = data.get('email')
+        business_name = data.get('business_name')
+        password = data.get('password')
+        
+        # Validate
+        if not all([plan, email, business_name, password]):
+            return jsonify({'error': 'All fields required'}), 400
+        
+        if len(password) < 8:
+            return jsonify({'error': 'Password must be at least 8 characters'}), 400
+        
+        # Check if email exists
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('SELECT id FROM users WHERE email = ?', (email,))
+            if c.fetchone():
+                return jsonify({'error': 'Email already exists'}), 400
+        
+        # Create PayPal payment
+        prices = {
+            'basic': '29.99',
+            'standard': '59.99',
+            'enterprise': '149.99'
+        }
+        
+        payment = paypalrestsdk.Payment({
+            "intent": "sale",
+            "payer": {
+                "payment_method": "paypal"
+            },
+            "redirect_urls": {
+                "return_url": url_for('payment_success', _external=True),
+                "cancel_url": url_for('payment_cancelled', _external=True)
+            },
+            "transactions": [{
+                "item_list": {
+                    "items": [{
+                        "name": f"LeaX AI - {plan.title()} Plan",
+                        "sku": plan,
+                        "price": prices[plan],
+                        "currency": "USD",
+                        "quantity": 1
+                    }]
+                },
+                "amount": {
+                    "total": prices[plan],
+                    "currency": "USD"
+                },
+                "description": f"LeaX AI {plan.title()} Plan - Monthly Subscription"
+            }]
+        })
+        
+        if payment.create():
+            # Store pending user data in session
+            session['pending_user'] = {
+                'email': email,
+                'business_name': business_name,
+                'password': password,
+                'plan': plan,
+                'payment_id': payment.id
+            }
+            
+            # Get approval URL
+            for link in payment.links:
+                if link.rel == "approval_url":
+                    return jsonify({'approval_url': link.href})
+        else:
+            print(f"PayPal Error: {payment.error}")
+            return jsonify({'error': 'Payment creation failed'}), 500
+            
+    except Exception as e:
+        print(f"Payment Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/payment/success')
+def payment_success():
+    """Handle successful PayPal payment"""
+    payment_id = request.args.get('paymentId')
+    payer_id = request.args.get('PayerID')
+    
+    if not payment_id or not payer_id:
+        flash('Payment verification failed')
+        return redirect(url_for('index'))
+    
+    try:
+        # Execute payment
+        payment = paypalrestsdk.Payment.find(payment_id)
+        
+        if payment.execute({"payer_id": payer_id}):
+            # Payment successful - create user account
+            pending = session.get('pending_user')
+            
+            if not pending:
+                flash('Session expired. Please try again.')
+                return redirect(url_for('index'))
+            
+            with get_db() as conn:
+                c = conn.cursor()
+                c.execute('''
+                    INSERT INTO users (email, password_hash, business_name, status, plan_type, trial_session_used)
+                    VALUES (?, ?, ?, 'active', ?, 0)
+                ''', (pending['email'], hash_password(pending['password']), 
+                      pending['business_name'], pending['plan']))
+                user_id = c.lastrowid
+                
+                c.execute('''
+                    INSERT INTO business_info (user_id, agent_personality)
+                    VALUES (?, 'Sarah')
+                ''', (user_id,))
+                
+                conn.commit()
+            
+            # Create memory
+            memory_mgr.create_customer_memory(
+                user_id=user_id,
+                business_name=pending['business_name'],
+                email=pending['email']
+            )
+            
+            # Log in user
+            session['user_id'] = user_id
+            session['email'] = pending['email']
+            session['business_name'] = pending['business_name']
+            session['user_plan'] = pending['plan']
+            session.pop('pending_user', None)
+            
+            # Send notification
+            email_notifier.notify_new_signup({
+                'user_id': user_id,
+                'business_name': pending['business_name'],
+                'email': pending['email'],
+                'plan_type': pending['plan']
+            })
+            
+            flash(f'Payment successful! Welcome to LeaX AI {pending["plan"].title()} Plan!')
+            return redirect(url_for('customize_agent'))
+        else:
+            flash('Payment execution failed')
+            return redirect(url_for('index'))
+            
+    except Exception as e:
+        print(f"Payment success error: {e}")
+        flash('Payment processing error')
+        return redirect(url_for('index'))
+
+@app.route('/payment/cancelled')
+def payment_cancelled():
+    """Handle cancelled PayPal payment"""
+    session.pop('pending_user', None)
+    flash('Payment was cancelled')
+    return redirect(url_for('index'))
+
 
 @app.route('/logout')
 def logout():
