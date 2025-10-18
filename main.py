@@ -692,6 +692,10 @@ def admin():
     </body>
     </html>
     '''
+@app.route('/health')
+def health():
+    """Health check endpoint"""
+    return jsonify({'status': 'healthy', 'service': 'leax-ai'}), 200
 
 # ==================== RUN ====================
 if __name__ == '__main__':
