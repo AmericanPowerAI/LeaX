@@ -680,7 +680,7 @@ def admin():
                 <th>Plan</th>
                 <th>Joined</th>
             </tr>
-            {"".join(f'''
+            {''.join(f'''
             <tr>
                 <td>{u['id']}</td>
                 <td>{u['email']}</td>
