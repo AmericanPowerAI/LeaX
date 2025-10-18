@@ -1652,6 +1652,7 @@ from memory_manager import MemoryManager
 from accessibility_layer import AccessibilityEngine
 from funding_tracker import FundingTracker
 from admin_settings_enhanced import register_funding_routes
+from health_check import register_health_check
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET', 'leax-super-secure-2024-8f7d2a9c1e6b4a0d5c8e2f1b7a9d4c3')
