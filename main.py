@@ -2418,7 +2418,7 @@ def index():
                             <li>Email Notifications</li>
                             <li>Website Integration</li>
                         </ul>
-                        <a href="/register?plan=basic" class="btn">Start Basic</a>
+                        <a href="/checkout/basic" class="btn">Start Basic</a>
                     </div>
                     
                     <div class="plan featured">
@@ -2432,7 +2432,7 @@ def index():
                             <li>Priority Support</li>
                             <li>Custom Training</li>
                         </ul>
-                        <a href="/register?plan=standard" class="btn">Start Standard</a>
+                        <a href="/checkout/standard" class="btn">Start Standard</a>
                     </div>
                     
                     <div class="plan">
@@ -2446,7 +2446,7 @@ def index():
                             <li>White-Label Option</li>
                             <li>Dedicated Account Manager</li>
                         </ul>
-                        <a href="/register?plan=enterprise" class="btn">Start Enterprise</a>
+                        <a href="/checkout/enterprise" class="btn">Start Enterprise</a>
                     </div>
                 </div>
                 
