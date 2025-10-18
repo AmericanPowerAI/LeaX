@@ -475,31 +475,34 @@ def view_leads():
         </body>
         </html>
         '''
-    
-    leads_html = ""
+        leads_html = ""
     for lead in leads:
         score_color = "#dc3545" if lead['lead_score'] >= 70 else "#fd7e14" if lead['lead_score'] >= 50 else "#666"
         meeting_badge = '✅ MEETING SET' if lead.get('meeting_scheduled') else ''
+        
+        meeting_html = ""
+        if meeting_badge:
+            meeting_html = f'<br><span style="background: #10b981; color: white; padding: 5px 15px; border-radius: 15px; margin-top: 10px; display: inline-block;">{meeting_badge}</span>'
         
         leads_html += f'''
         <div class="lead-card" style="border-left-color: {score_color};">
             <div style="display: flex; justify-content: space-between;">
                 <div>
-                    <h3>📞 {lead['phone_number']}</h3>
-                    <p style="color: {score_color}; font-weight: bold;">Score: {lead['lead_score']}/100</p>
+                    <h3>📞 {lead["phone_number"]}</h3>
+                    <p style="color: {score_color}; font-weight: bold;">Score: {lead["lead_score"]}/100</p>
                 </div>
                 <div>
                     <span style="background: {score_color}; color: white; padding: 5px 15px; border-radius: 15px;">
-                        {lead['status'].upper()}
+                        {lead["status"].upper()}
                     </span>
-                    {f'<br><span style="background: #10b981; color: white; padding: 5px 15px; border-radius: 15px; margin-top: 10px; display: inline-block;">{meeting_badge}</span>' if meeting_badge else ''}
+                    {meeting_html}
                 </div>
             </div>
             <div style="margin-top: 15px;">
-                <p><strong>Project:</strong> {lead.get('project_type') or 'Not specified'}</p>
-                <p><strong>Urgency:</strong> {lead.get('urgency') or 'Not specified'}</p>
-                <p><strong>Messages:</strong> {lead['message_count']}</p>
-                <p><strong>Last Contact:</strong> {lead['last_contact']}</p>
+                <p><strong>Project:</strong> {lead.get("project_type") or "Not specified"}</p>
+                <p><strong>Urgency:</strong> {lead.get("urgency") or "Not specified"}</p>
+                <p><strong>Messages:</strong> {lead["message_count"]}</p>
+                <p><strong>Last Contact:</strong> {lead["last_contact"]}</p>
             </div>
         </div>
         '''
