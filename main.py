@@ -680,17 +680,13 @@ def admin():
                 <th>Plan</th>
                 <th>Joined</th>
             </tr>
-            {''.join([
-                f'''
-            <tr>
+            {''.join(f'''<tr>
                 <td>{u["id"]}</td>
                 <td>{u["email"]}</td>
                 <td>{u["business_name"]}</td>
                 <td>{u["plan_type"]}</td>
                 <td>{u["created_at"]}</td>
-            </tr>
-                ''' for u in recent_users
-            ])}
+            </tr>''' for u in recent_users)}
         </table>
         
         <p><a href="/">← Back</a></p>
