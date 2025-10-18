@@ -785,7 +785,7 @@ def dashboard():
             <div class="container">
                 <div class="welcome-card">
                     <h1>&#127881; Welcome to LeaX, {session['business_name']}!</h1>
-                    <p>Let's get your AI agent set up in 3 easy steps</p>
+                    <p>Let\'s get your AI agent set up in 3 easy steps</p>
                     <p style="margin-top: 20px; font-size: 16px;">You're testing the <strong>{user_dict.get('plan_type', 'Basic').upper()}</strong> plan</p>
                 </div>
                 
