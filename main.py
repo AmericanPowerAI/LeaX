@@ -710,6 +710,71 @@ def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
+    # Get current tab from URL parameter
+    current_tab = request.args.get('tab', 'overview')
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
+        user = c.fetchone()
+        
+        # Get lead stats
+        c.execute('''
+            SELECT COUNT(*) as total_leads, 
+                   COUNT(CASE WHEN status = 'new' THEN 1 END) as new_leads,
+                   COUNT(CASE WHEN lead_score >= 70 THEN 1 END) as hot_leads,
+                   COUNT(CASE WHEN meeting_scheduled = 1 THEN 1 END) as meetings_scheduled
+            FROM leads WHERE user_id = ?
+        ''', (session['user_id'],))
+        lead_stats = c.fetchone()
+        
+        # Get leads if on leads tab
+        leads = []
+        if current_tab == 'leads':
+            c.execute('''
+                SELECT * FROM leads
+                WHERE user_id = ? 
+                ORDER BY lead_score DESC, last_contact DESC
+                LIMIT 50
+            ''', (session['user_id'],))
+            leads = [dict(row) for row in c.fetchall()]
+    
+    # Get analytics
+    analytics = memory_mgr.get_customer_analytics(session['user_id'])
+    
+    # Get funding earnings
+    earnings = funding.get_monthly_earnings(session['user_id'])
+    ytd = funding.get_total_earnings_ytd(session['user_id'])
+    
+    # Get accessibility settings
+    memory = memory_mgr.load_customer_memory(session['user_id'])
+    accessibility_settings = memory.get('accessibility_settings', {}) if memory else {}
+    
+    # Prepare stats
+    stats = {
+        'total_leads': lead_stats['total_leads'] if lead_stats else 0,
+        'total_messages': analytics['total_messages'] if analytics else 0,
+        'total_calls': analytics['total_calls'] if analytics else 0,
+        'meetings_scheduled': lead_stats['meetings_scheduled'] if lead_stats else 0
+    }
+    
+    return render_template('complete_dashboard.html',
+        page_title='Dashboard',
+        current_tab=current_tab,
+        business_name=session['business_name'],
+        plan_type=user['plan_type'] if user else 'basic',
+        user_id=session['user_id'],
+        stats=stats,
+        earnings=earnings,
+        ytd_earnings=ytd['total_ytd'] if ytd else 0,
+        captions_enabled=accessibility_settings.get('captions_enabled', False),
+        speech_assist_enabled=accessibility_settings.get('speech_assist_enabled', False),
+        leads=leads
+    )
+def dashboard():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
     with get_db() as conn:
         c = conn.cursor()
         c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
