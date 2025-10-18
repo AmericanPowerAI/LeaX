@@ -1622,7 +1622,7 @@ def accessibility_settings():
         </script>
     </body>
     </html>
-    '''from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
+    from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from twilio.twiml.messaging_response import MessagingResponse
 import openai
