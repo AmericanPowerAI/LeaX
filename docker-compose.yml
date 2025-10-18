@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  leax:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - leax_data:/data
+      - ./customer_memories:/app/customer_memories
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - FLASK_SECRET=${FLASK_SECRET}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  leax_data:
