@@ -1,6 +1,10 @@
-flask==2.3.3
-twilio==8.10.0
+flask==3.0.0
+twilio==8.10.3
 openai==0.28.1
 requests==2.31.0
 beautifulsoup4==4.12.2
 paypalrestsdk==1.13.1
+selenium==4.15.2
+pyautogui==0.9.54
+pillow==10.1.0
+python-dotenv==1.0.0
