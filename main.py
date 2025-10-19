@@ -654,7 +654,7 @@ def admin():
     
     platform_stats = memory_mgr.get_total_usage_stats()
     
-    return f'''
+    html = f'''
     <!DOCTYPE html>
     <html>
     <head><title>Admin - LeaX</title>
@@ -680,19 +680,28 @@ def admin():
                 <th>Plan</th>
                 <th>Joined</th>
             </tr>
-            {''.join(f'''<tr>
+    '''
+    
+    # Add table rows
+    for u in recent_users:
+        html += f'''
+            <tr>
                 <td>{u["id"]}</td>
                 <td>{u["email"]}</td>
                 <td>{u["business_name"]}</td>
                 <td>{u["plan_type"]}</td>
                 <td>{u["created_at"]}</td>
-            </tr>''' for u in recent_users)}
+            </tr>
+        '''
+    
+    html += '''
         </table>
-        
         <p><a href="/">← Back</a></p>
     </body>
     </html>
     '''
+    
+    return html
 @app.route('/health')
 def health():
     """Health check endpoint"""
