@@ -1,1302 +1,4 @@
-# ==================== TEST AGENT ====================
-@app.route('/test-agent')
-def test_agent():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
-        user = c.fetchone()
-        
-        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
-        business = c.fetchone()
-    
-    examples = generate_example_prompts(
-        session.get('business_name'),
-        business['custom_info'] if business else None
-    )
-    
-    return render_template('test_agent_modern.html', 
-                         examples=examples,
-                         trials_remaining=None)
-
-@app.route('/api/test-chat', methods=['POST'])
-def test_chat():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not logged in'})
-    
-    data = request.json
-    user_message = data.get('message')
-    
-    # Simulate human typing delay
-    import time
-    typing_delay = min(3, max(1, len(user_message) * 0.05))
-    time.sleep(typing_delay)
-    
-    # Get conversation history
-    conversation_context = memory_mgr.get_conversation_context(
-        session['user_id'], 
-        'TEST-USER',
-        last_n_messages=10
-    )
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
-        business = c.fetchone()
-    
-    business_context = f"""
-Business: {session.get('business_name')}
-Services: {business['custom_info'] if business and business['custom_info'] else 'Full service provider'}
-Website: {business['website_url'] if business and business['website_url'] else 'Not provided'}
-"""
-    
-    # Generate response
-    ai_reply, tokens = generate_human_response(
-        session.get('business_name'),
-        business_context,
-        user_message,
-        conversation_context
-    )
-    
-    # Track with funding system if captions enabled
-    if accessibility.user_wants_captions(session['user_id']):
-        funding.track_billable_event(
-            user_id=session['user_id'],
-            event_type='caption',
-            duration_seconds=len(ai_reply) * 2,  # Estimate
-            from_number='TEST-USER'
-        )
-    
-    # Log conversations
-    memory_mgr.log_conversation(session['user_id'], {
-        'type': 'sms',
-        'direction': 'inbound',
-        'from_number': 'TEST-USER',
-        'to_number': 'AI-AGENT',
-        'content': user_message,
-        'ai_model': 'gpt-4',
-        'tokens': tokens,
-        'cost': tokens * 0.00003
-    })
-    
-    memory_mgr.log_conversation(session['user_id'], {
-        'type': 'sms',
-        'direction': 'outbound',
-        'from_number': 'AI-AGENT',
-        'to_number': 'TEST-USER',
-        'content': ai_reply,
-        'ai_response': ai_reply,
-        'ai_model': 'gpt-4',
-        'tokens': 0,
-        'cost': 0
-    })
-    
-    # Save to database
-    with get_db() as conn:
-        c = conn.cursor()
-        
-        c.execute('''
-            INSERT INTO conversations (user_id, phone_number, message_text, response_text, message_direction, tokens_used, cost_usd)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (session['user_id'], 'TEST-USER', user_message, ai_reply, 'incoming', tokens, tokens * 0.00003))
-        
-        c.execute('''
-            INSERT INTO conversations (user_id, phone_number, message_text, response_text, message_direction)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (session['user_id'], 'TEST-USER', ai_reply, '', 'outgoing'))
-        
-        # Update/create lead
-        c.execute('SELECT * FROM leads WHERE phone_number = ? AND user_id = ?', ('TEST-USER', session['user_id']))
-        existing_lead = c.fetchone()
-        
-        intent_analysis = analyze_customer_intent(user_message)
-        sale_closed = check_for_sale_closed(user_message, ai_reply)
-        meeting_scheduled = check_for_meeting_info(user_message, ai_reply)
-        
-        if existing_lead:
-            lead_id = existing_lead['id']
-            has_contact_info = bool(existing_lead['contact_name'] or existing_lead['contact_email'])
-            new_score = calculate_lead_score(intent_analysis, len(user_message), has_contact_info, meeting_scheduled or sale_closed)
-            
-            updates = []
-            params = []
-            
-            if intent_analysis.get('project_type') != 'general_inquiry':
-                updates.append('project_type = ?')
-                params.append(intent_analysis['project_type'])
-            
-            if meeting_scheduled or sale_closed:
-                updates.append('meeting_scheduled = 1')
-            
-            updates.append('lead_score = ?')
-            params.append(new_score)
-            updates.append('last_contact = CURRENT_TIMESTAMP')
-            
-            params.append(lead_id)
-            
-            if updates:
-                c.execute(f'''UPDATE leads SET {', '.join(updates)} WHERE id = ?''', params)
-        else:
-            lead_score = calculate_lead_score(intent_analysis, len(user_message), False, meeting_scheduled or sale_closed)
-            
-            c.execute('''
-                INSERT INTO leads 
-                (user_id, phone_number, project_type, urgency, budget, status, lead_score, meeting_scheduled)
-                VALUES (?, ?, ?, ?, ?, 'new', ?, ?)
-            ''', (session['user_id'], 'TEST-USER', 
-                  intent_analysis.get('project_type', 'inquiry'),
-                  intent_analysis.get('urgency', 'flexible'),
-                  intent_analysis.get('potential_budget', 'unknown'),
-                  lead_score,
-                  1 if (meeting_scheduled or sale_closed) else 0))
-            
-            lead_id = c.lastrowid
-        
-        c.execute('''
-            INSERT INTO lead_conversations 
-            (lead_id, user_id, message_text, response_text, intent_detected, needs_identified)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (lead_id, session['user_id'], user_message, ai_reply, 
-              json.dumps(intent_analysis), intent_analysis.get('key_requirements', '')))
-        
-        conn.commit()
-    
-    memory_mgr.update_customer_info(session['user_id'], 'TEST-USER', {
-        'last_inquiry': user_message,
-        'meeting_scheduled': meeting_scheduled or sale_closed
-    })
-    
-    print(f"✅ Test conversation logged for user {session['user_id']}")
-    
-    return jsonify({'reply': ai_reply, 'typing_time': typing_delay})
-
-# ==================== LIVE AGENT ENDPOINT ====================
-@app.route('/agent/<user_id>', methods=['POST'])
-def ai_agent(user_id):
-    """Live AI agent - handles SMS and VOICE"""
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM users WHERE id = ? AND is_active = 1', (user_id,))
-        user = c.fetchone()
-        
-        if not user:
-            return "Agent not active", 404
-        
-        c.execute('SELECT * FROM business_info WHERE user_id = ?', (user_id,))
-        business = c.fetchone()
-    
-    # Handle SMS
-    if "SmsMessageSid" in request.form:
-        incoming_msg = request.form.get('Body', '').strip()
-        from_number = request.form.get('From', '')
-        to_number = request.form.get('To', '')
-        
-        # Get conversation history
-        conversation_context = memory_mgr.get_conversation_context(
-            user_id, 
-            from_number,
-            last_n_messages=15
-        )
-        
-        business_context = f"""
-Business: {user['business_name']}
-Services: {business['custom_info'] if business and business['custom_info'] else 'Full service provider'}
-Website: {business['website_url'] if business and business['website_url'] else ''}
-"""
-        
-        # Generate response with accessibility support
-        if accessibility.user_wants_captions(user_id):
-            captions = accessibility.generate_captions(incoming_msg)
-            ai_reply, tokens = generate_human_response(
-                user['business_name'],
-                business_context,
-                captions,
-                conversation_context
-            )
-            
-            # Track billable event
-            funding.track_billable_event(
-                user_id=user_id,
-                event_type='caption',
-                duration_seconds=len(ai_reply) * 2,
-                from_number=from_number
-            )
-        else:
-            ai_reply, tokens = generate_human_response(
-                user['business_name'],
-                business_context,
-                incoming_msg,
-                conversation_context
-            )
-        
-        # Log to memory
-        memory_mgr.log_conversation(user_id, {
-            'type': 'sms',
-            'direction': 'inbound',
-            'from_number': from_number,
-            'to_number': to_number,
-            'content': incoming_msg,
-            'ai_model': 'gpt-4',
-            'tokens': tokens,
-            'cost': tokens * 0.00003
-        })
-        
-        memory_mgr.log_conversation(user_id, {
-            'type': 'sms',
-            'direction': 'outbound',
-            'from_number': to_number,
-            'to_number': from_number,
-            'content': ai_reply,
-            'ai_response': ai_reply,
-            'ai_model': 'gpt-4',
-            'tokens': 0,
-            'cost': 0
-        })
-        
-        # Send email notification
-        email_notifier.notify_conversation({
-            'business_name': user['business_name'],
-            'email': user['email'],
-            'user_id': user_id
-        }, {
-            'type': 'sms',
-            'from_number': from_number,
-            'to_number': to_number,
-            'direction': 'inbound',
-            'content': incoming_msg
-        })
-        
-        # Create/Update Lead
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute('SELECT * FROM leads WHERE phone_number = ? AND user_id = ?', (from_number, user_id))
-            existing_lead = c.fetchone()
-            
-            intent_analysis = analyze_customer_intent(incoming_msg)
-            meeting_scheduled = check_for_meeting_info(incoming_msg, ai_reply)
-            
-            if existing_lead:
-                lead_id = existing_lead['id']
-                has_contact_info = bool(existing_lead['contact_name'] or existing_lead['contact_email'])
-                new_score = calculate_lead_score(intent_analysis, len(incoming_msg), has_contact_info, meeting_scheduled)
-                
-                updates = []
-                params = []
-                
-                if intent_analysis.get('project_type') != 'general_inquiry':
-                    updates.append('project_type = ?')
-                    params.append(intent_analysis['project_type'])
-                
-                if meeting_scheduled and not existing_lead['meeting_scheduled']:
-                    updates.append('meeting_scheduled = 1')
-                    updates.append('meeting_datetime = CURRENT_TIMESTAMP')
-                
-                updates.append('lead_score = ?')
-                params.append(new_score)
-                updates.append('last_contact = CURRENT_TIMESTAMP')
-                
-                params.append(lead_id)
-                
-                c.execute(f'''UPDATE leads SET {', '.join(updates)} WHERE id = ?''', params)
-                
-                memory_mgr.update_customer_info(user_id, from_number, {
-                    'last_inquiry': incoming_msg,
-                    'meeting_scheduled': meeting_scheduled
-                })
-                
-            else:
-                lead_score = calculate_lead_score(intent_analysis, len(incoming_msg), False, meeting_scheduled)
-                
-                c.execute('''
-                    INSERT INTO leads 
-                    (user_id, phone_number, project_type, urgency, budget, status, lead_score, meeting_scheduled)
-                    VALUES (?, ?, ?, ?, ?, 'new', ?, ?)
-                ''', (user_id, from_number, 
-                      intent_analysis.get('project_type', 'inquiry'),
-                      intent_analysis.get('urgency', 'flexible'),
-                      intent_analysis.get('potential_budget', 'unknown'),
-                      lead_score,
-                      1 if meeting_scheduled else 0))
-                
-                lead_id = c.lastrowid
-                
-                memory_mgr.update_customer_info(user_id, from_number, {
-                    'first_contact': datetime.now().isoformat(),
-                    'last_inquiry': incoming_msg,
-                    'meeting_scheduled': meeting_scheduled
-                })
-            
-            conn.commit()
-            
-            update_lead_conversation(lead_id, user_id, incoming_msg, ai_reply, intent_analysis)
-            
-            c.execute('SELECT * FROM leads WHERE id = ?', (lead_id,))
-            lead_data = dict(c.fetchone())
-            
-            send_comprehensive_lead_email(lead_data, [], {'business_name': user['business_name']})
-        
-        resp = MessagingResponse()
-        resp.message(ai_reply)
-        return str(resp)
-    
-    # Handle VOICE CALLS
-    else:
-        from_number = request.form.get('From', '')
-        to_number = request.form.get('To', '')
-        
-        memory_mgr.log_conversation(user_id, {
-            'type': 'call',
-            'direction': 'inbound',
-            'from_number': from_number,
-            'to_number': to_number,
-            'content': f"Voice call from {from_number}",
-            'duration': 0,
-            'ai_model': 'voice',
-            'tokens': 0,
-            'cost': 0.01
-        })
-        
-        resp = VoiceResponse()
-        resp.say(
-            f"Hi! You've reached {user['business_name']}. For fastest service, please text us at this number and we'll get right back to you.",
-            voice='alice',
-            language='en-US'
-        )
-        
-        gather = Gather(num_digits=1, action=f'/agent/{user_id}/voice-menu', method='POST')
-        gather.say('Press 1 to leave a message, or press 2 to text us instead.', voice='alice')
-        resp.append(gather)
-        
-        return str(resp)
-
-@app.route('/agent/<user_id>/voice-menu', methods=['POST'])
-def voice_menu(user_id):
-    """Handle voice menu"""
-    digit = request.form.get('Digits', '')
-    
-    resp = VoiceResponse()
-    
-    if digit == '1':
-        resp.say('Please leave your message after the beep.', voice='alice')
-        resp.record(max_length=60, action=f'/agent/{user_id}/voicemail', method='POST')
-    elif digit == '2':
-        resp.say('Great! Text this number and we will respond right away.', voice='alice')
-    else:
-        resp.say('Please call back or text us. Goodbye!', voice='alice')
-    
-    resp.hangup()
-    return str(resp)
-
-@app.route('/agent/<user_id>/voicemail', methods=['POST'])
-def handle_voicemail(user_id):
-    """Handle voicemail"""
-    recording_url = request.form.get('RecordingUrl', '')
-    from_number = request.form.get('From', '')
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM users WHERE id = ?', (user_id,))
-        user = c.fetchone()
-        
-        if user:
-            email_notifier.send_notification(
-                f"📞 VOICEMAIL: {user['business_name']}",
-                f"<p>New voicemail from {from_number}</p><p><a href='{recording_url}'>Listen</a></p>",
-                f"Voicemail from {from_number}\n{recording_url}"
-            )
-    
-    resp = VoiceResponse()
-    resp.say('Thank you! We will call you back soon.', voice='alice')
-    resp.hangup()
-    return str(resp)
-
-# ==================== LEADS ====================
-@app.route('/leads')
-def view_leads():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('''
-            SELECT l.*, 
-                   (SELECT COUNT(*) FROM lead_conversations lc WHERE lc.lead_id = l.id) as message_count
-            FROM leads l
-            WHERE l.user_id = ? 
-            ORDER BY l.lead_score DESC, l.last_contact DESC
-            LIMIT 100
-        ''', (session['user_id'],))
-        leads = [dict(row) for row in c.fetchall()]
-    
-    if not leads:
-        return '''
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Leads - LeaX</title>
-            <style>
-                body { 
-                    font-family: Arial;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    min-height: 100vh;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 20px;
-                }
-                .empty-state { 
-                    background: white; 
-                    padding: 60px 40px; 
-                    border-radius: 20px; 
-                    text-align: center;
-                    max-width: 600px;
-                }
-                .btn { 
-                    background: linear-gradient(135deg, #667eea, #764ba2);
-                    color: white; 
-                    padding: 15px 30px; 
-                    text-decoration: none; 
-                    border-radius: 25px; 
-                    display: inline-block; 
-                    margin: 10px;
-                    font-weight: 600;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="empty-state">
-                <h1>📋 No Leads Yet</h1>
-                <p>Test your agent to see leads automatically!</p>
-                <a href="/test-agent" class="btn">💬 Test Agent</a>
-                <a href="/dashboard" class="btn">🏠 Dashboard</a>
-            </div>
-        </body>
-        </html>
-        '''
-        leads_html = ""
-    for lead in leads:
-        score_color = "#dc3545" if lead['lead_score'] >= 70 else "#fd7e14" if lead['lead_score'] >= 50 else "#666"
-        meeting_badge = '✅ MEETING SET' if lead.get('meeting_scheduled') else ''
-        
-        meeting_html = ""
-        if meeting_badge:
-            meeting_html = f'<br><span style="background: #10b981; color: white; padding: 5px 15px; border-radius: 15px; margin-top: 10px; display: inline-block;">{meeting_badge}</span>'
-        
-        leads_html += f'''
-        <div class="lead-card" style="border-left-color: {score_color};">
-            <div style="display: flex; justify-content: space-between;">
-                <div>
-                    <h3>📞 {lead["phone_number"]}</h3>
-                    <p style="color: {score_color}; font-weight: bold;">Score: {lead["lead_score"]}/100</p>
-                </div>
-                <div>
-                    <span style="background: {score_color}; color: white; padding: 5px 15px; border-radius: 15px;">
-                        {lead["status"].upper()}
-                    </span>
-                    {meeting_html}
-                </div>
-            </div>
-            <div style="margin-top: 15px;">
-                <p><strong>Project:</strong> {lead.get("project_type") or "Not specified"}</p>
-                <p><strong>Urgency:</strong> {lead.get("urgency") or "Not specified"}</p>
-                <p><strong>Messages:</strong> {lead["message_count"]}</p>
-                <p><strong>Last Contact:</strong> {lead["last_contact"]}</p>
-            </div>
-        </div>
-        '''
-    
-    return f'''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Leads - LeaX</title>
-        <style>
-            body {{ 
-                font-family: Arial;
-                background: #f5f7fa;
-                min-height: 100vh;
-            }}
-            .nav {{
-                background: white;
-                padding: 20px 40px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            }}
-            .container {{ max-width: 1200px; margin: 0 auto; padding: 40px 20px; }}
-            .lead-card {{ 
-                background: white; 
-                padding: 25px; 
-                margin: 20px 0; 
-                border-radius: 15px; 
-                border-left: 5px solid #ddd;
-                box-shadow: 0 5px 20px rgba(0,0,0,0.05);
-            }}
-            .btn {{ 
-                background: linear-gradient(135deg, #667eea, #764ba2);
-                color: white; 
-                padding: 12px 25px; 
-                text-decoration: none; 
-                border-radius: 25px; 
-                font-weight: 600;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="nav">
-            <a href="/dashboard" class="btn">← Dashboard</a>
-        </div>
-        
-        <div class="container">
-            <h1>Your Leads - {session['business_name']}</h1>
-            <p><strong>Total:</strong> {len(leads)} leads</p>
-            
-            {leads_html}
-        </div>
-    </body>
-    </html>
-    '''
-
-# ==================== ANALYTICS ====================
-@app.route('/analytics')
-def analytics():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    analytics_data = memory_mgr.get_customer_analytics(session['user_id'])
-    memory = memory_mgr.load_customer_memory(session['user_id'])
-    
-    if not analytics_data or analytics_data['total_conversations'] == 0:
-        return '''
-        <!DOCTYPE html>
-        <html>
-        <head><title>Analytics - LeaX</title></head>
-        <body style="font-family: Arial; text-align: center; padding: 100px;">
-            <h1>📊 No Analytics Yet</h1>
-            <p>Start testing to see analytics!</p>
-            <a href="/test-agent" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px;">Test Agent</a>
-        </body>
-        </html>
-        '''
-    
-    recent_convos = memory['conversation_history'][-30:] if memory else []
-    
-    return f'''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Analytics - LeaX</title>
-        <style>
-            body {{ font-family: Arial; background: #f5f7fa; }}
-            .container {{ max-width: 1200px; margin: 0 auto; padding: 40px 20px; }}
-            .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }}
-            .stat-card {{ background: white; padding: 30px; border-radius: 15px; text-align: center; }}
-            .stat-number {{ font-size: 42px; font-weight: 800; color: #667eea; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Analytics - {session['business_name']}</h1>
-            
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-number">{analytics_data['total_conversations']}</div>
-                    <div>Conversations</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">{analytics_data['total_messages']}</div>
-                    <div>Messages</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">{analytics_data['total_calls']}</div>
-                    <div>Calls</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">{analytics_data['meetings_scheduled']}</div>
-                    <div>Meetings</div>
-                </div>
-            </div>
-            
-            <p style="margin-top: 30px;"><a href="/dashboard">← Back</a></p>
-        </div>
-    </body>
-    </html>
-    '''
-
-# ==================== PRICING ====================
-@app.route('/pricing')
-def pricing():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head><title>Pricing - LeaX</title></head>
-    <body style="font-family: Arial; padding: 40px; text-align: center;">
-        <h1>Upgrade Your Plan</h1>
-        <p>Contact us: hr@americanpower.us</p>
-        <a href="/dashboard" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px;">← Back</a>
-    </body>
-    </html>
-    '''
-
-# ==================== ADMIN ====================
-@app.route('/admin')
-def admin():
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT COUNT(*) as total FROM users')
-        total_users = c.fetchone()['total']
-        
-        c.execute('SELECT * FROM users ORDER BY created_at DESC LIMIT 20')
-        recent_users = [dict(row) for row in c.fetchall()]
-    
-    platform_stats = memory_mgr.get_total_usage_stats()
-    
-    html = f'''
-    <!DOCTYPE html>
-    <html>
-    <head><title>Admin - LeaX</title>
-    <style>
-        body {{ font-family: Arial; padding: 20px; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th, td {{ border: 1px solid #ddd; padding: 12px; }}
-        th {{ background: #667eea; color: white; }}
-    </style>
-    </head>
-    <body>
-        <h1>🎛️ LeaX Admin</h1>
-        <p>Total Users: {total_users}</p>
-        <p>Total Conversations: {platform_stats['total_conversations']}</p>
-        <p>Total Cost: ${platform_stats['total_cost_usd']:.2f}</p>
-        
-        <h2>Recent Users</h2>
-        <table>
-            <tr>
-                <th>ID</th>
-                <th>Email</th>
-                <th>Business</th>
-                <th>Plan</th>
-                <th>Joined</th>
-            </tr>
-    '''
-    
-    # Add table rows
-    for u in recent_users:
-        html += f'''
-            <tr>
-                <td>{u["id"]}</td>
-                <td>{u["email"]}</td>
-                <td>{u["business_name"]}</td>
-                <td>{u["plan_type"]}</td>
-                <td>{u["created_at"]}</td>
-            </tr>
-        '''
-    
-    html += '''
-        </table>
-        <p><a href="/">← Back</a></p>
-    </body>
-    </html>
-    '''
-    
-    return html
-@app.route('/health')
-def health():
-    """Health check endpoint"""
-    return jsonify({'status': 'healthy', 'service': 'leax-ai'}), 200
-
-# ==================== RUN ====================
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    logging.info(f"🚀 LeaX Starting - Database: {DATABASE_FILE}")
-    logging.info(f"✅ Memory Manager Initialized")
-    logging.info(f"✅ Accessibility Engine Active")
-    logging.info(f"✅ Funding Tracker Active")
-    logging.info(f"✅ Government Funding Integration Complete")
-    
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
-
-# ==================== DASHBOARD WITH FUNDING CARD ====================
-@app.route('/dashboard')
-def dashboard():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    # Get current tab from URL parameter
-    current_tab = request.args.get('tab', 'overview')
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
-        user = c.fetchone()
-        
-        # Get lead stats
-        c.execute('''
-            SELECT COUNT(*) as total_leads, 
-                   COUNT(CASE WHEN status = 'new' THEN 1 END) as new_leads,
-                   COUNT(CASE WHEN lead_score >= 70 THEN 1 END) as hot_leads,
-                   COUNT(CASE WHEN meeting_scheduled = 1 THEN 1 END) as meetings_scheduled
-            FROM leads WHERE user_id = ?
-        ''', (session['user_id'],))
-        lead_stats = c.fetchone()
-        
-        # Get leads if on leads tab
-        leads = []
-        if current_tab == 'leads':
-            c.execute('''
-                SELECT * FROM leads
-                WHERE user_id = ? 
-                ORDER BY lead_score DESC, last_contact DESC
-                LIMIT 50
-            ''', (session['user_id'],))
-            leads = [dict(row) for row in c.fetchall()]
-    
-    # Get analytics
-    analytics = memory_mgr.get_customer_analytics(session['user_id'])
-    
-    # Get funding earnings
-    earnings = funding.get_monthly_earnings(session['user_id'])
-    ytd = funding.get_total_earnings_ytd(session['user_id'])
-    
-    # Get accessibility settings
-    memory = memory_mgr.load_customer_memory(session['user_id'])
-    accessibility_settings = memory.get('accessibility_settings', {}) if memory else {}
-    
-    # Prepare stats
-    stats = {
-        'total_leads': lead_stats['total_leads'] if lead_stats else 0,
-        'total_messages': analytics['total_messages'] if analytics else 0,
-        'total_calls': analytics['total_calls'] if analytics else 0,
-        'meetings_scheduled': lead_stats['meetings_scheduled'] if lead_stats else 0
-    }
-    
-    return render_template('complete_dashboard.html',
-        page_title='Dashboard',
-        current_tab=current_tab,
-        business_name=session['business_name'],
-        plan_type=user['plan_type'] if user else 'basic',
-        user_id=session['user_id'],
-        stats=stats,
-        earnings=earnings,
-        ytd_earnings=ytd['total_ytd'] if ytd else 0,
-        captions_enabled=accessibility_settings.get('captions_enabled', False),
-        speech_assist_enabled=accessibility_settings.get('speech_assist_enabled', False),
-        leads=leads
-    )
-
-# ==================== CUSTOMIZE AGENT ====================
-@app.route('/customize')
-def customize_agent():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
-        business = c.fetchone()
-    
-    existing_url = business['website_url'] if business else ''
-    existing_info = business['custom_info'] if business else ''
-    existing_personality = business['agent_personality'] if business else 'Sarah'
-    
-    return f'''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Customize Agent - LeaX</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-                background: #f5f7fa;
-                min-height: 100vh;
-            }}
-            .nav {{
-                background: white;
-                padding: 20px 40px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }}
-            .logo {{
-                font-size: 24px;
-                font-weight: 800;
-                background: linear-gradient(135deg, #667eea, #764ba2);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-            }}
-            .container {{ max-width: 1200px; margin: 0 auto; padding: 40px 20px; }}
-            .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }}
-            .form-section {{ background: white; padding: 40px; border-radius: 15px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); }}
-            .preview-section {{ background: white; padding: 40px; border-radius: 15px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); }}
-            input, textarea, select {{ 
-                width: 100%; 
-                padding: 12px 15px; 
-                margin: 10px 0; 
-                border: 2px solid #e2e8f0; 
-                border-radius: 10px; 
-                font-size: 15px;
-                font-family: inherit;
-                transition: border-color 0.3s;
-            }}
-            input:focus, textarea:focus, select:focus {{
-                outline: none;
-                border-color: #667eea;
-            }}
-            button {{ 
-                background: linear-gradient(135deg, #667eea, #764ba2);
-                color: white; 
-                padding: 15px 30px; 
-                border: none; 
-                cursor: pointer; 
-                width: 100%; 
-                border-radius: 10px; 
-                font-size: 16px;
-                font-weight: 600;
-                margin-top: 20px;
-                transition: all 0.3s;
-            }}
-            button:hover:not(:disabled) {{
-                transform: scale(1.02);
-            }}
-            button:disabled {{ 
-                background: #ccc; 
-                cursor: not-allowed;
-            }}
-            .message {{ 
-                padding: 15px; 
-                margin: 15px 0; 
-                border-radius: 10px; 
-                display: none;
-            }}
-            .success {{ 
-                background: #d4edda; 
-                color: #155724; 
-                display: block; 
-            }}
-            .info-banner {{ 
-                background: linear-gradient(135deg, #667eea, #764ba2);
-                color: white;
-                padding: 20px; 
-                border-radius: 10px; 
-                margin: 20px 0;
-            }}
-            .preview-message {{ 
-                background: #f8f9fa; 
-                padding: 20px; 
-                margin: 15px 0; 
-                border-radius: 10px; 
-                border-left: 4px solid #667eea; 
-            }}
-            h2 {{ color: #333; margin-bottom: 10px; }}
-            h3 {{ color: #333; margin: 20px 0 10px 0; }}
-            label {{ 
-                display: block; 
-                color: #666; 
-                font-weight: 600; 
-                margin-top: 15px; 
-            }}
-            small {{ color: #999; font-size: 13px; }}
-            @media (max-width: 968px) {{
-                .grid {{ grid-template-columns: 1fr; }}
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="nav">
-            <div class="logo">🤖 LeaX AI</div>
-            <div><a href="/dashboard" style="color: #667eea; text-decoration: none; font-weight: 600;">← Back to Dashboard</a></div>
-        </div>
-        
-        <div class="container">
-            <h2>Customize Your AI Agent</h2>
-            
-            <div class="info-banner">
-                <strong>💡 Pro Tip:</strong> Just paste your website URL and we'll automatically learn about your business - services, pricing, hours, and more!
-            </div>
-            
-            <div id="message" class="message"></div>
-            
-            <div class="grid">
-                <div class="form-section">
-                    <h3>Business Information</h3>
-                    <form id="customizeForm">
-                        <label>Website URL</label>
-                        <input type="text" id="website_url" placeholder="example.com" value="{existing_url}">
-                        <small>No need to type https:// - we'll add it automatically!</small>
-                        
-                        <label>About Your Business</label>
-                        <textarea id="custom_info" placeholder="Tell us about your services, pricing, hours, specialties..." rows="6">{existing_info}</textarea>
-                        <small>The more details you provide, the better your AI will respond</small>
-                        
-                        <label>Agent Name</label>
-                        <input type="text" id="agent_name" placeholder="e.g., Sarah, Mike, Jessica" value="{existing_personality}">
-                        <small>Give your AI a friendly name customers will love</small>
-                        
-                        <button type="submit" id="saveBtn">💾 Save & Preview Response</button>
-                    </form>
-                </div>
-                
-                <div class="preview-section">
-                    <h3>🎯 Preview: How Your AI Will Respond</h3>
-                    <div id="previewArea">
-                        <p style="color: #999; text-align: center; padding: 60px 20px;">Fill out the form and click "Save & Preview" to see how your AI will sound with real customer questions!</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <script>
-            document.getElementById('customizeForm').addEventListener('submit', function(e) {{
-                e.preventDefault();
-                
-                const saveBtn = document.getElementById('saveBtn');
-                const message = document.getElementById('message');
-                
-                saveBtn.disabled = true;
-                saveBtn.textContent = '⏳ Saving & Learning From Your Website...';
-                
-                const data = {{
-                    website_url: document.getElementById('website_url').value,
-                    custom_info: document.getElementById('custom_info').value,
-                    agent_name: document.getElementById('agent_name').value
-                }};
-                
-                fetch('/api/save-customization', {{
-                    method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify(data)
-                }})
-                .then(response => response.json())
-                .then(result => {{
-                    message.className = 'message success';
-                    message.textContent = '✅ Saved! Your AI is now trained. Check the preview →';
-                    
-                    const preview = document.getElementById('previewArea');
-                    preview.innerHTML = `
-                        <div class="preview-message">
-                            <p style="margin-bottom: 15px;"><strong>Customer:</strong> "Do you offer emergency services?"</p>
-                            <p style="margin-bottom: 20px;"><strong>${{data.agent_name}}:</strong> "${{result.preview}}"</p>
-                        </div>
-                        <p style="text-align: center; margin-top: 30px;">
-                            <a href="/test-agent" style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; display: inline-block; font-weight: 600;">
-                                💬 Test Live Chat Now →
-                            </a>
-                        </p>
-                    `;
-                    
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = '💾 Save & Preview Response';
-                    
-                    preview.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                }})
-                .catch(error => {{
-                    message.className = 'message';
-                    message.style.background = '#fee';
-                    message.style.color = '#c33';
-                    message.style.display = 'block';
-                    message.textContent = '❌ Error saving. Please try again.';
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = '💾 Save & Preview Response';
-                }});
-            }});
-        </script>
-    </body>
-    </html>
-    '''
-
-@app.route('/api/save-customization', methods=['POST'])
-def save_customization():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not logged in'})
-    
-    data = request.json
-    website_url = data.get('website_url', '')
-    custom_info = data.get('custom_info', '')
-    agent_name = data.get('agent_name', 'Sarah')
-    
-    if website_url:
-        website_url = normalize_url(website_url)
-    
-    website_context = ""
-    if website_url:
-        print(f"🔍 Scraping website: {website_url}")
-        scraped = scrape_website_info(website_url)
-        if scraped:
-            website_context = f"""
-Website: {scraped['title']}
-Description: {scraped['description']}
-Services Found: {scraped['services_found']}
-Pricing Info: {scraped['pricing_indicators']}
-Content Summary: {scraped['content_summary']}
-"""
-            print(f"✅ Website scraped successfully")
-        else:
-            print(f"⚠️ Could not scrape website")
-    
-    full_context = custom_info + "\n\n" + website_context if website_context else custom_info
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('''
-            INSERT OR REPLACE INTO business_info 
-            (user_id, website_url, custom_info, agent_personality, updated_at) 
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ''', (session['user_id'], website_url, full_context, agent_name))
-        conn.commit()
-    
-    memory_mgr.update_business_profile(session['user_id'], {
-        'website_url': website_url,
-        'custom_info': full_context,
-        'personality': agent_name
-    })
-    
-    print(f"✅ Customization saved for user {session['user_id']}")
-    
-    business_context = f"""
-Business: {session.get('business_name')}
-Services: {full_context or 'Full service provider'}
-Website: {website_url or 'Not provided'}
-"""
-    
-    preview_response, _ = generate_human_response(
-        session.get('business_name'),
-        business_context,
-        "Do you offer emergency services?",
-        ""
-    )
-    
-    return jsonify({'success': True, 'preview': preview_response})
-
-# ==================== ACCESSIBILITY SETTINGS PAGE ====================
-@app.route('/accessibility-settings')
-def accessibility_settings():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    # Get current settings from memory
-    memory = memory_mgr.load_customer_memory(session['user_id'])
-    accessibility_settings = memory.get('accessibility_settings', {}) if memory else {}
-    
-    captions_enabled = accessibility_settings.get('captions_enabled', False)
-    speech_assist_enabled = accessibility_settings.get('speech_assist_enabled', False)
-    
-    # Get earnings
-    earnings = funding.get_monthly_earnings(session['user_id'])
-    
-    return f'''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Accessibility Settings - LeaX</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-                background: #f5f7fa;
-                min-height: 100vh;
-            }}
-            .nav {{
-                background: white;
-                padding: 20px 40px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }}
-            .logo {{
-                font-size: 24px;
-                font-weight: 800;
-                background: linear-gradient(135deg, #667eea, #764ba2);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-            }}
-            .container {{ max-width: 900px; margin: 0 auto; padding: 40px 20px; }}
-            .card {{
-                background: white;
-                padding: 40px;
-                border-radius: 15px;
-                box-shadow: 0 5px 20px rgba(0,0,0,0.05);
-                margin: 20px 0;
-            }}
-            .earnings-banner {{
-                background: linear-gradient(135deg, #10b981, #059669);
-                color: white;
-                padding: 30px;
-                border-radius: 15px;
-                text-align: center;
-                margin-bottom: 30px;
-            }}
-            .earnings-amount {{
-                font-size: 48px;
-                font-weight: 800;
-                margin: 10px 0;
-            }}
-            .toggle-section {{
-                padding: 25px;
-                border: 2px solid #e2e8f0;
-                border-radius: 10px;
-                margin: 20px 0;
-                transition: all 0.3s;
-            }}
-            .toggle-section:hover {{
-                border-color: #667eea;
-                box-shadow: 0 5px 15px rgba(102,126,234,0.1);
-            }}
-            .toggle-header {{
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 15px;
-            }}
-            .toggle-switch {{
-                position: relative;
-                width: 60px;
-                height: 34px;
-            }}
-            .toggle-switch input {{
-                opacity: 0;
-                width: 0;
-                height: 0;
-            }}
-            .slider {{
-                position: absolute;
-                cursor: pointer;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background-color: #ccc;
-                transition: .4s;
-                border-radius: 34px;
-            }}
-            .slider:before {{
-                position: absolute;
-                content: "";
-                height: 26px;
-                width: 26px;
-                left: 4px;
-                bottom: 4px;
-                background-color: white;
-                transition: .4s;
-                border-radius: 50%;
-            }}
-            input:checked + .slider {{
-                background-color: #10b981;
-            }}
-            input:checked + .slider:before {{
-                transform: translateX(26px);
-            }}
-            .earnings-badge {{
-                background: #ffc107;
-                color: #000;
-                padding: 5px 15px;
-                border-radius: 15px;
-                font-size: 14px;
-                font-weight: 700;
-                display: inline-block;
-                margin-top: 10px;
-            }}
-            h3 {{ color: #333; margin-bottom: 10px; }}
-            p {{ color: #666; line-height: 1.6; }}
-        </style>
-    </head>
-    <body>
-        <div class="nav">
-            <div class="logo">🤖 LeaX AI</div>
-            <div><a href="/dashboard" style="color: #667eea; text-decoration: none; font-weight: 600;">← Back to Dashboard</a></div>
-        </div>
-        
-        <div class="container">
-            <h1 style="color: #333; margin-bottom: 20px;">💰 Accessibility & Government Funding</h1>
-            
-            <div class="earnings-banner">
-                <h2>This Month's Funding Revenue</h2>
-                <div class="earnings-amount">${earnings['total_monthly']:.2f}</div>
-                <p>From accessibility services you're providing to the community</p>
-            </div>
-            
-            <div class="card">
-                <h2 style="margin-bottom: 20px;">Enable Accessibility Features</h2>
-                <p style="margin-bottom: 30px;">Enable these features to serve people with disabilities AND earn government funding automatically!</p>
-                
-                <div class="toggle-section">
-                    <div class="toggle-header">
-                        <div>
-                            <h3>📞 Real-Time Captions (IP CTS)</h3>
-                            <p>Provide real-time captions for deaf/hard-of-hearing callers</p>
-                            <span class="earnings-badge">💰 Earn $1.40/minute from FCC</span>
-                        </div>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="captions_enabled" {'checked' if captions_enabled else ''} onchange="toggleAccessibility('captions')">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-                
-                <div class="toggle-section">
-                    <div class="toggle-header">
-                        <div>
-                            <h3>🗣️ Speech Clarity Assistant (STS)</h3>
-                            <p>Help clarify speech for people with speech disabilities</p>
-                            <span class="earnings-badge">💰 Earn $1.75/minute from FCC</span>
-                        </div>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="speech_assist_enabled" {'checked' if speech_assist_enabled else ''} onchange="toggleAccessibility('speech_assist')">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-                
-                <div style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin-top: 30px;">
-                    <h3 style="color: #0369a1;">ℹ️ How It Works</h3>
-                    <ul style="margin: 15px 0 0 20px; line-height: 2; color: #0c4a6e;">
-                        <li>Enable features above with one click</li>
-                        <li>We automatically track all billable minutes</li>
-                        <li>Generate FCC compliance reports monthly</li>
-                        <li>Receive reimbursement payments directly</li>
-                        <li>Serve your community while earning revenue!</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-        
-        <script>
-            function toggleAccessibility(feature) {{
-                const enabled = document.getElementById(feature + '_enabled').checked;
-                
-                fetch('/enable-accessibility', {{
-                    method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{
-                        feature: feature,
-                        enabled: enabled
-                    }})
-                }})
-                .then(response => response.json())
-                .then(data => {{
-                    if(data.success) {{
-                        alert('✅ ' + data.message);
-                    }}
-                }})
-                .catch(error => {{
-                    console.error('Error:', error);
-                    alert('❌ Error updating settings');
-                }});
-            }}
-        </script>
-    </body>
-    </html>
-    '''
-
-# Remove the duplicate Flask imports and database initialization that appears to be incorrectly pasted
-# The following lines should be at the top of your file, not here:
-
+# ==================== IMPORTS & INITIALIZATION ====================
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from twilio.twiml.messaging_response import MessagingResponse
@@ -1325,6 +27,7 @@ from funding_tracker import FundingTracker
 from admin_settings_enhanced import register_funding_routes
 from health_check import register_health_check
 
+# Initialize Flask app FIRST
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET', 'leax-super-secure-2024-8f7d2a9c1e6b4a0d5c8e2f1b7a9d4c3')
 
@@ -1936,6 +639,420 @@ NOW RESPOND LIKE A REAL HUMAN WHO WANTS TO CLOSE THIS DEAL (2-3 sentences max):"
         print(f"AI Error: {e}")
         return f"Hey! Thanks for reaching out to {business_name}. Can you tell me more about what you need? That way I can give you accurate pricing and timing.", 0
 
+# ==================== TEST AGENT ====================
+@app.route('/test-agent')
+def test_agent():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
+        user = c.fetchone()
+        
+        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
+        business = c.fetchone()
+    
+    examples = generate_example_prompts(
+        session.get('business_name'),
+        business['custom_info'] if business else None
+    )
+    
+    return render_template('test_agent_modern.html', 
+                         examples=examples,
+                         trials_remaining=None)
+
+@app.route('/api/test-chat', methods=['POST'])
+def test_chat():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'})
+    
+    data = request.json
+    user_message = data.get('message')
+    
+    # Simulate human typing delay
+    import time
+    typing_delay = min(3, max(1, len(user_message) * 0.05))
+    time.sleep(typing_delay)
+    
+    # Get conversation history
+    conversation_context = memory_mgr.get_conversation_context(
+        session['user_id'], 
+        'TEST-USER',
+        last_n_messages=10
+    )
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
+        business = c.fetchone()
+    
+    business_context = f"""
+Business: {session.get('business_name')}
+Services: {business['custom_info'] if business and business['custom_info'] else 'Full service provider'}
+Website: {business['website_url'] if business and business['website_url'] else 'Not provided'}
+"""
+    
+    # Generate response
+    ai_reply, tokens = generate_human_response(
+        session.get('business_name'),
+        business_context,
+        user_message,
+        conversation_context
+    )
+    
+    # Track with funding system if captions enabled
+    if accessibility.user_wants_captions(session['user_id']):
+        funding.track_billable_event(
+            user_id=session['user_id'],
+            event_type='caption',
+            duration_seconds=len(ai_reply) * 2,  # Estimate
+            from_number='TEST-USER'
+        )
+    
+    # Log conversations
+    memory_mgr.log_conversation(session['user_id'], {
+        'type': 'sms',
+        'direction': 'inbound',
+        'from_number': 'TEST-USER',
+        'to_number': 'AI-AGENT',
+        'content': user_message,
+        'ai_model': 'gpt-4',
+        'tokens': tokens,
+        'cost': tokens * 0.00003
+    })
+    
+    memory_mgr.log_conversation(session['user_id'], {
+        'type': 'sms',
+        'direction': 'outbound',
+        'from_number': 'AI-AGENT',
+        'to_number': 'TEST-USER',
+        'content': ai_reply,
+        'ai_response': ai_reply,
+        'ai_model': 'gpt-4',
+        'tokens': 0,
+        'cost': 0
+    })
+    
+    # Save to database
+    with get_db() as conn:
+        c = conn.cursor()
+        
+        c.execute('''
+            INSERT INTO conversations (user_id, phone_number, message_text, response_text, message_direction, tokens_used, cost_usd)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (session['user_id'], 'TEST-USER', user_message, ai_reply, 'incoming', tokens, tokens * 0.00003))
+        
+        c.execute('''
+            INSERT INTO conversations (user_id, phone_number, message_text, response_text, message_direction)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (session['user_id'], 'TEST-USER', ai_reply, '', 'outgoing'))
+        
+        # Update/create lead
+        c.execute('SELECT * FROM leads WHERE phone_number = ? AND user_id = ?', ('TEST-USER', session['user_id']))
+        existing_lead = c.fetchone()
+        
+        intent_analysis = analyze_customer_intent(user_message)
+        sale_closed = check_for_sale_closed(user_message, ai_reply)
+        meeting_scheduled = check_for_meeting_info(user_message, ai_reply)
+        
+        if existing_lead:
+            lead_id = existing_lead['id']
+            has_contact_info = bool(existing_lead['contact_name'] or existing_lead['contact_email'])
+            new_score = calculate_lead_score(intent_analysis, len(user_message), has_contact_info, meeting_scheduled or sale_closed)
+            
+            updates = []
+            params = []
+            
+            if intent_analysis.get('project_type') != 'general_inquiry':
+                updates.append('project_type = ?')
+                params.append(intent_analysis['project_type'])
+            
+            if meeting_scheduled or sale_closed:
+                updates.append('meeting_scheduled = 1')
+            
+            updates.append('lead_score = ?')
+            params.append(new_score)
+            updates.append('last_contact = CURRENT_TIMESTAMP')
+            
+            params.append(lead_id)
+            
+            if updates:
+                c.execute(f'''UPDATE leads SET {', '.join(updates)} WHERE id = ?''', params)
+        else:
+            lead_score = calculate_lead_score(intent_analysis, len(user_message), False, meeting_scheduled or sale_closed)
+            
+            c.execute('''
+                INSERT INTO leads 
+                (user_id, phone_number, project_type, urgency, budget, status, lead_score, meeting_scheduled)
+                VALUES (?, ?, ?, ?, ?, 'new', ?, ?)
+            ''', (session['user_id'], 'TEST-USER', 
+                  intent_analysis.get('project_type', 'inquiry'),
+                  intent_analysis.get('urgency', 'flexible'),
+                  intent_analysis.get('potential_budget', 'unknown'),
+                  lead_score,
+                  1 if (meeting_scheduled or sale_closed) else 0))
+            
+            lead_id = c.lastrowid
+        
+        c.execute('''
+            INSERT INTO lead_conversations 
+            (lead_id, user_id, message_text, response_text, intent_detected, needs_identified)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (lead_id, session['user_id'], user_message, ai_reply, 
+              json.dumps(intent_analysis), intent_analysis.get('key_requirements', '')))
+        
+        conn.commit()
+    
+    memory_mgr.update_customer_info(session['user_id'], 'TEST-USER', {
+        'last_inquiry': user_message,
+        'meeting_scheduled': meeting_scheduled or sale_closed
+    })
+    
+    print(f"✅ Test conversation logged for user {session['user_id']}")
+    
+    return jsonify({'reply': ai_reply, 'typing_time': typing_delay})
+
+# ==================== LIVE AGENT ENDPOINT ====================
+@app.route('/agent/<user_id>', methods=['POST'])
+def ai_agent(user_id):
+    """Live AI agent - handles SMS and VOICE"""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM users WHERE id = ? AND is_active = 1', (user_id,))
+        user = c.fetchone()
+        
+        if not user:
+            return "Agent not active", 404
+        
+        c.execute('SELECT * FROM business_info WHERE user_id = ?', (user_id,))
+        business = c.fetchone()
+    
+    # Handle SMS
+    if "SmsMessageSid" in request.form:
+        incoming_msg = request.form.get('Body', '').strip()
+        from_number = request.form.get('From', '')
+        to_number = request.form.get('To', '')
+        
+        # Get conversation history
+        conversation_context = memory_mgr.get_conversation_context(
+            user_id, 
+            from_number,
+            last_n_messages=15
+        )
+        
+        business_context = f"""
+Business: {user['business_name']}
+Services: {business['custom_info'] if business and business['custom_info'] else 'Full service provider'}
+Website: {business['website_url'] if business and business['website_url'] else ''}
+"""
+        
+        # Generate response with accessibility support
+        if accessibility.user_wants_captions(user_id):
+            captions = accessibility.generate_captions(incoming_msg)
+            ai_reply, tokens = generate_human_response(
+                user['business_name'],
+                business_context,
+                captions,
+                conversation_context
+            )
+            
+            # Track billable event
+            funding.track_billable_event(
+                user_id=user_id,
+                event_type='caption',
+                duration_seconds=len(ai_reply) * 2,
+                from_number=from_number
+            )
+        else:
+            ai_reply, tokens = generate_human_response(
+                user['business_name'],
+                business_context,
+                incoming_msg,
+                conversation_context
+            )
+        
+        # Log to memory
+        memory_mgr.log_conversation(user_id, {
+            'type': 'sms',
+            'direction': 'inbound',
+            'from_number': from_number,
+            'to_number': to_number,
+            'content': incoming_msg,
+            'ai_model': 'gpt-4',
+            'tokens': tokens,
+            'cost': tokens * 0.00003
+        })
+        
+        memory_mgr.log_conversation(user_id, {
+            'type': 'sms',
+            'direction': 'outbound',
+            'from_number': to_number,
+            'to_number': from_number,
+            'content': ai_reply,
+            'ai_response': ai_reply,
+            'ai_model': 'gpt-4',
+            'tokens': 0,
+            'cost': 0
+        })
+        
+        # Send email notification
+        email_notifier.notify_conversation({
+            'business_name': user['business_name'],
+            'email': user['email'],
+            'user_id': user_id
+        }, {
+            'type': 'sms',
+            'from_number': from_number,
+            'to_number': to_number,
+            'direction': 'inbound',
+            'content': incoming_msg
+        })
+        
+        # Create/Update Lead
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('SELECT * FROM leads WHERE phone_number = ? AND user_id = ?', (from_number, user_id))
+            existing_lead = c.fetchone()
+            
+            intent_analysis = analyze_customer_intent(incoming_msg)
+            meeting_scheduled = check_for_meeting_info(incoming_msg, ai_reply)
+            
+            if existing_lead:
+                lead_id = existing_lead['id']
+                has_contact_info = bool(existing_lead['contact_name'] or existing_lead['contact_email'])
+                new_score = calculate_lead_score(intent_analysis, len(incoming_msg), has_contact_info, meeting_scheduled)
+                
+                updates = []
+                params = []
+                
+                if intent_analysis.get('project_type') != 'general_inquiry':
+                    updates.append('project_type = ?')
+                    params.append(intent_analysis['project_type'])
+                
+                if meeting_scheduled and not existing_lead['meeting_scheduled']:
+                    updates.append('meeting_scheduled = 1')
+                    updates.append('meeting_datetime = CURRENT_TIMESTAMP')
+                
+                updates.append('lead_score = ?')
+                params.append(new_score)
+                updates.append('last_contact = CURRENT_TIMESTAMP')
+                
+                params.append(lead_id)
+                
+                c.execute(f'''UPDATE leads SET {', '.join(updates)} WHERE id = ?''', params)
+                
+                memory_mgr.update_customer_info(user_id, from_number, {
+                    'last_inquiry': incoming_msg,
+                    'meeting_scheduled': meeting_scheduled
+                })
+                
+            else:
+                lead_score = calculate_lead_score(intent_analysis, len(incoming_msg), False, meeting_scheduled)
+                
+                c.execute('''
+                    INSERT INTO leads 
+                    (user_id, phone_number, project_type, urgency, budget, status, lead_score, meeting_scheduled)
+                    VALUES (?, ?, ?, ?, ?, 'new', ?, ?)
+                ''', (user_id, from_number, 
+                      intent_analysis.get('project_type', 'inquiry'),
+                      intent_analysis.get('urgency', 'flexible'),
+                      intent_analysis.get('potential_budget', 'unknown'),
+                      lead_score,
+                      1 if meeting_scheduled else 0))
+                
+                lead_id = c.lastrowid
+                
+                memory_mgr.update_customer_info(user_id, from_number, {
+                    'first_contact': datetime.now().isoformat(),
+                    'last_inquiry': incoming_msg,
+                    'meeting_scheduled': meeting_scheduled
+                })
+            
+            conn.commit()
+            
+            update_lead_conversation(lead_id, user_id, incoming_msg, ai_reply, intent_analysis)
+            
+            c.execute('SELECT * FROM leads WHERE id = ?', (lead_id,))
+            lead_data = dict(c.fetchone())
+            
+            send_comprehensive_lead_email(lead_data, [], {'business_name': user['business_name']})
+        
+        resp = MessagingResponse()
+        resp.message(ai_reply)
+        return str(resp)
+    
+    # Handle VOICE CALLS
+    else:
+        from_number = request.form.get('From', '')
+        to_number = request.form.get('To', '')
+        
+        memory_mgr.log_conversation(user_id, {
+            'type': 'call',
+            'direction': 'inbound',
+            'from_number': from_number,
+            'to_number': to_number,
+            'content': f"Voice call from {from_number}",
+            'duration': 0,
+            'ai_model': 'voice',
+            'tokens': 0,
+            'cost': 0.01
+        })
+        
+        resp = VoiceResponse()
+        resp.say(
+            f"Hi! You've reached {user['business_name']}. For fastest service, please text us at this number and we'll get right back to you.",
+            voice='alice',
+            language='en-US'
+        )
+        
+        gather = Gather(num_digits=1, action=f'/agent/{user_id}/voice-menu', method='POST')
+        gather.say('Press 1 to leave a message, or press 2 to text us instead.', voice='alice')
+        resp.append(gather)
+        
+        return str(resp)
+
+@app.route('/agent/<user_id>/voice-menu', methods=['POST'])
+def voice_menu(user_id):
+    """Handle voice menu"""
+    digit = request.form.get('Digits', '')
+    
+    resp = VoiceResponse()
+    
+    if digit == '1':
+        resp.say('Please leave your message after the beep.', voice='alice')
+        resp.record(max_length=60, action=f'/agent/{user_id}/voicemail', method='POST')
+    elif digit == '2':
+        resp.say('Great! Text this number and we will respond right away.', voice='alice')
+    else:
+        resp.say('Please call back or text us. Goodbye!', voice='alice')
+    
+    resp.hangup()
+    return str(resp)
+
+@app.route('/agent/<user_id>/voicemail', methods=['POST'])
+def handle_voicemail(user_id):
+    """Handle voicemail"""
+    recording_url = request.form.get('RecordingUrl', '')
+    from_number = request.form.get('From', '')
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+        user = c.fetchone()
+        
+        if user:
+            email_notifier.send_notification(
+                f"📞 VOICEMAIL: {user['business_name']}",
+                f"<p>New voicemail from {from_number}</p><p><a href='{recording_url}'>Listen</a></p>",
+                f"Voicemail from {from_number}\n{recording_url}"
+            )
+    
+    resp = VoiceResponse()
+    resp.say('Thank you! We will call you back soon.', voice='alice')
+    resp.hangup()
+    return str(resp)
+
 # ==================== LANDING PAGE ====================
 @app.route('/')
 def index():
@@ -2432,6 +1549,7 @@ def register():
         except sqlite3.IntegrityError:
             flash('Email already exists')
             return redirect(url_for('register'))
+
 # ==================== PAYPAL CHECKOUT ====================
 @app.route('/checkout/<plan>')
 def checkout(plan):
@@ -2611,9 +1729,695 @@ def payment_cancelled():
     flash('Payment was cancelled')
     return redirect(url_for('index'))
 
-
 @app.route('/logout')
 def logout():
     session.clear()
     flash('You have been logged out')
     return redirect(url_for('login'))
+
+# ==================== ADD THE MISSING ROUTES ====================
+
+@app.route('/dashboard')
+def dashboard():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    # Get current tab from URL parameter
+    current_tab = request.args.get('tab', 'overview')
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
+        user = c.fetchone()
+        
+        # Get lead stats
+        c.execute('''
+            SELECT COUNT(*) as total_leads, 
+                   COUNT(CASE WHEN status = 'new' THEN 1 END) as new_leads,
+                   COUNT(CASE WHEN lead_score >= 70 THEN 1 END) as hot_leads,
+                   COUNT(CASE WHEN meeting_scheduled = 1 THEN 1 END) as meetings_scheduled
+            FROM leads WHERE user_id = ?
+        ''', (session['user_id'],))
+        lead_stats = c.fetchone()
+        
+        # Get leads if on leads tab
+        leads = []
+        if current_tab == 'leads':
+            c.execute('''
+                SELECT * FROM leads
+                WHERE user_id = ? 
+                ORDER BY lead_score DESC, last_contact DESC
+                LIMIT 50
+            ''', (session['user_id'],))
+            leads = [dict(row) for row in c.fetchall()]
+    
+    # Get analytics
+    analytics = memory_mgr.get_customer_analytics(session['user_id'])
+    
+    # Get funding earnings
+    earnings = funding.get_monthly_earnings(session['user_id'])
+    ytd = funding.get_total_earnings_ytd(session['user_id'])
+    
+    # Get accessibility settings
+    memory = memory_mgr.load_customer_memory(session['user_id'])
+    accessibility_settings = memory.get('accessibility_settings', {}) if memory else {}
+    
+    # Prepare stats
+    stats = {
+        'total_leads': lead_stats['total_leads'] if lead_stats else 0,
+        'total_messages': analytics['total_messages'] if analytics else 0,
+        'total_calls': analytics['total_calls'] if analytics else 0,
+        'meetings_scheduled': lead_stats['meetings_scheduled'] if lead_stats else 0
+    }
+    
+    return render_template('complete_dashboard.html',
+        page_title='Dashboard',
+        current_tab=current_tab,
+        business_name=session['business_name'],
+        plan_type=user['plan_type'] if user else 'basic',
+        user_id=session['user_id'],
+        stats=stats,
+        earnings=earnings,
+        ytd_earnings=ytd['total_ytd'] if ytd else 0,
+        captions_enabled=accessibility_settings.get('captions_enabled', False),
+        speech_assist_enabled=accessibility_settings.get('speech_assist_enabled', False),
+        leads=leads
+    )
+
+@app.route('/customize')
+def customize_agent():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
+        business = c.fetchone()
+    
+    existing_url = business['website_url'] if business else ''
+    existing_info = business['custom_info'] if business else ''
+    existing_personality = business['agent_personality'] if business else 'Sarah'
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Customize Agent - LeaX</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+                background: #f5f7fa;
+                min-height: 100vh;
+            }}
+            .nav {{
+                background: white;
+                padding: 20px 40px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }}
+            .logo {{
+                font-size: 24px;
+                font-weight: 800;
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }}
+            .container {{ max-width: 1200px; margin: 0 auto; padding: 40px 20px; }}
+            .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }}
+            .form-section {{ background: white; padding: 40px; border-radius: 15px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); }}
+            .preview-section {{ background: white; padding: 40px; border-radius: 15px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); }}
+            input, textarea, select {{ 
+                width: 100%; 
+                padding: 12px 15px; 
+                margin: 10px 0; 
+                border: 2px solid #e2e8f0; 
+                border-radius: 10px; 
+                font-size: 15px;
+                font-family: inherit;
+                transition: border-color 0.3s;
+            }}
+            input:focus, textarea:focus, select:focus {{
+                outline: none;
+                border-color: #667eea;
+            }}
+            button {{ 
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                color: white; 
+                padding: 15px 30px; 
+                border: none; 
+                cursor: pointer; 
+                width: 100%; 
+                border-radius: 10px; 
+                font-size: 16px;
+                font-weight: 600;
+                margin-top: 20px;
+                transition: all 0.3s;
+            }}
+            button:hover:not(:disabled) {{
+                transform: scale(1.02);
+            }}
+            button:disabled {{ 
+                background: #ccc; 
+                cursor: not-allowed;
+            }}
+            .message {{ 
+                padding: 15px; 
+                margin: 15px 0; 
+                border-radius: 10px; 
+                display: none;
+            }}
+            .success {{ 
+                background: #d4edda; 
+                color: #155724; 
+                display: block; 
+            }}
+            .info-banner {{ 
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                color: white;
+                padding: 20px; 
+                border-radius: 10px; 
+                margin: 20px 0;
+            }}
+            .preview-message {{ 
+                background: #f8f9fa; 
+                padding: 20px; 
+                margin: 15px 0; 
+                border-radius: 10px; 
+                border-left: 4px solid #667eea; 
+            }}
+            h2 {{ color: #333; margin-bottom: 10px; }}
+            h3 {{ color: #333; margin: 20px 0 10px 0; }}
+            label {{ 
+                display: block; 
+                color: #666; 
+                font-weight: 600; 
+                margin-top: 15px; 
+            }}
+            small {{ color: #999; font-size: 13px; }}
+            @media (max-width: 968px) {{
+                .grid {{ grid-template-columns: 1fr; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="nav">
+            <div class="logo">🤖 LeaX AI</div>
+            <div><a href="/dashboard" style="color: #667eea; text-decoration: none; font-weight: 600;">← Back to Dashboard</a></div>
+        </div>
+        
+        <div class="container">
+            <h2>Customize Your AI Agent</h2>
+            
+            <div class="info-banner">
+                <strong>💡 Pro Tip:</strong> Just paste your website URL and we'll automatically learn about your business - services, pricing, hours, and more!
+            </div>
+            
+            <div id="message" class="message"></div>
+            
+            <div class="grid">
+                <div class="form-section">
+                    <h3>Business Information</h3>
+                    <form id="customizeForm">
+                        <label>Website URL</label>
+                        <input type="text" id="website_url" placeholder="example.com" value="{existing_url}">
+                        <small>No need to type https:// - we'll add it automatically!</small>
+                        
+                        <label>About Your Business</label>
+                        <textarea id="custom_info" placeholder="Tell us about your services, pricing, hours, specialties..." rows="6">{existing_info}</textarea>
+                        <small>The more details you provide, the better your AI will respond</small>
+                        
+                        <label>Agent Name</label>
+                        <input type="text" id="agent_name" placeholder="e.g., Sarah, Mike, Jessica" value="{existing_personality}">
+                        <small>Give your AI a friendly name customers will love</small>
+                        
+                        <button type="submit" id="saveBtn">💾 Save & Preview Response</button>
+                    </form>
+                </div>
+                
+                <div class="preview-section">
+                    <h3>🎯 Preview: How Your AI Will Respond</h3>
+                    <div id="previewArea">
+                        <p style="color: #999; text-align: center; padding: 60px 20px;">Fill out the form and click "Save & Preview" to see how your AI will sound with real customer questions!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            document.getElementById('customizeForm').addEventListener('submit', function(e) {{
+                e.preventDefault();
+                
+                const saveBtn = document.getElementById('saveBtn');
+                const message = document.getElementById('message');
+                
+                saveBtn.disabled = true;
+                saveBtn.textContent = '⏳ Saving & Learning From Your Website...';
+                
+                const data = {{
+                    website_url: document.getElementById('website_url').value,
+                    custom_info: document.getElementById('custom_info').value,
+                    agent_name: document.getElementById('agent_name').value
+                }};
+                
+                fetch('/api/save-customization', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify(data)
+                }})
+                .then(response => response.json())
+                .then(result => {{
+                    message.className = 'message success';
+                    message.textContent = '✅ Saved! Your AI is now trained. Check the preview →';
+                    
+                    const preview = document.getElementById('previewArea');
+                    preview.innerHTML = `
+                        <div class="preview-message">
+                            <p style="margin-bottom: 15px;"><strong>Customer:</strong> "Do you offer emergency services?"</p>
+                            <p style="margin-bottom: 20px;"><strong>${{data.agent_name}}:</strong> "${{result.preview}}"</p>
+                        </div>
+                        <p style="text-align: center; margin-top: 30px;">
+                            <a href="/test-agent" style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; display: inline-block; font-weight: 600;">
+                                💬 Test Live Chat Now →
+                            </a>
+                        </p>
+                    `;
+                    
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '💾 Save & Preview Response';
+                    
+                    preview.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                }})
+                .catch(error => {{
+                    message.className = 'message';
+                    message.style.background = '#fee';
+                    message.style.color = '#c33';
+                    message.style.display = 'block';
+                    message.textContent = '❌ Error saving. Please try again.';
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = '💾 Save & Preview Response';
+                }});
+            }});
+        </script>
+    </body>
+    </html>
+    '''
+
+@app.route('/api/save-customization', methods=['POST'])
+def save_customization():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'})
+    
+    data = request.json
+    website_url = data.get('website_url', '')
+    custom_info = data.get('custom_info', '')
+    agent_name = data.get('agent_name', 'Sarah')
+    
+    if website_url:
+        website_url = normalize_url(website_url)
+    
+    website_context = ""
+    if website_url:
+        print(f"🔍 Scraping website: {website_url}")
+        scraped = scrape_website_info(website_url)
+        if scraped:
+            website_context = f"""
+Website: {scraped['title']}
+Description: {scraped['description']}
+Services Found: {scraped['services_found']}
+Pricing Info: {scraped['pricing_indicators']}
+Content Summary: {scraped['content_summary']}
+"""
+            print(f"✅ Website scraped successfully")
+        else:
+            print(f"⚠️ Could not scrape website")
+    
+    full_context = custom_info + "\n\n" + website_context if website_context else custom_info
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT OR REPLACE INTO business_info 
+            (user_id, website_url, custom_info, agent_personality, updated_at) 
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (session['user_id'], website_url, full_context, agent_name))
+        conn.commit()
+    
+    memory_mgr.update_business_profile(session['user_id'], {
+        'website_url': website_url,
+        'custom_info': full_context,
+        'personality': agent_name
+    })
+    
+    print(f"✅ Customization saved for user {session['user_id']}")
+    
+    business_context = f"""
+Business: {session.get('business_name')}
+Services: {full_context or 'Full service provider'}
+Website: {website_url or 'Not provided'}
+"""
+    
+    preview_response, _ = generate_human_response(
+        session.get('business_name'),
+        business_context,
+        "Do you offer emergency services?",
+        ""
+    )
+    
+    return jsonify({'success': True, 'preview': preview_response})
+
+@app.route('/enable-accessibility', methods=['POST'])
+def enable_accessibility():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'})
+    
+    data = request.json
+    feature = data.get('feature')
+    enabled = data.get('enabled', False)
+    
+    memory = memory_mgr.load_customer_memory(session['user_id'])
+    if not memory:
+        memory = {}
+    
+    if 'accessibility_settings' not in memory:
+        memory['accessibility_settings'] = {}
+    
+    if feature == 'captions':
+        memory['accessibility_settings']['captions_enabled'] = enabled
+        message = 'Real-time captions enabled!' if enabled else 'Real-time captions disabled.'
+    elif feature == 'speech_assist':
+        memory['accessibility_settings']['speech_assist_enabled'] = enabled
+        message = 'Speech clarity assistant enabled!' if enabled else 'Speech clarity assistant disabled.'
+    else:
+        return jsonify({'error': 'Invalid feature'})
+    
+    memory_mgr.save_customer_memory(session['user_id'], memory)
+    
+    return jsonify({'success': True, 'message': message})
+
+@app.route('/leads')
+def view_leads():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT l.*, 
+                   (SELECT COUNT(*) FROM lead_conversations lc WHERE lc.lead_id = l.id) as message_count
+            FROM leads l
+            WHERE l.user_id = ? 
+            ORDER BY l.lead_score DESC, l.last_contact DESC
+            LIMIT 100
+        ''', (session['user_id'],))
+        leads = [dict(row) for row in c.fetchall()]
+    
+    if not leads:
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Leads - LeaX</title>
+            <style>
+                body { 
+                    font-family: Arial;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                }
+                .empty-state { 
+                    background: white; 
+                    padding: 60px 40px; 
+                    border-radius: 20px; 
+                    text-align: center;
+                    max-width: 600px;
+                }
+                .btn { 
+                    background: linear-gradient(135deg, #667eea, #764ba2);
+                    color: white; 
+                    padding: 15px 30px; 
+                    text-decoration: none; 
+                    border-radius: 25px; 
+                    display: inline-block; 
+                    margin: 10px;
+                    font-weight: 600;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="empty-state">
+                <h1>📋 No Leads Yet</h1>
+                <p>Test your agent to see leads automatically!</p>
+                <a href="/test-agent" class="btn">💬 Test Agent</a>
+                <a href="/dashboard" class="btn">🏠 Dashboard</a>
+            </div>
+        </body>
+        </html>
+        '''
+    
+    leads_html = ""
+    for lead in leads:
+        score_color = "#dc3545" if lead['lead_score'] >= 70 else "#fd7e14" if lead['lead_score'] >= 50 else "#666"
+        meeting_badge = '✅ MEETING SET' if lead.get('meeting_scheduled') else ''
+        
+        meeting_html = ""
+        if meeting_badge:
+            meeting_html = f'<br><span style="background: #10b981; color: white; padding: 5px 15px; border-radius: 15px; margin-top: 10px; display: inline-block;">{meeting_badge}</span>'
+        
+        leads_html += f'''
+        <div class="lead-card" style="border-left-color: {score_color};">
+            <div style="display: flex; justify-content: space-between;">
+                <div>
+                    <h3>📞 {lead["phone_number"]}</h3>
+                    <p style="color: {score_color}; font-weight: bold;">Score: {lead["lead_score"]}/100</p>
+                </div>
+                <div>
+                    <span style="background: {score_color}; color: white; padding: 5px 15px; border-radius: 15px;">
+                        {lead["status"].upper()}
+                    </span>
+                    {meeting_html}
+                </div>
+            </div>
+            <div style="margin-top: 15px;">
+                <p><strong>Project:</strong> {lead.get("project_type") or "Not specified"}</p>
+                <p><strong>Urgency:</strong> {lead.get("urgency") or "Not specified"}</p>
+                <p><strong>Messages:</strong> {lead["message_count"]}</p>
+                <p><strong>Last Contact:</strong> {lead["last_contact"]}</p>
+            </div>
+        </div>
+        '''
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Leads - LeaX</title>
+        <style>
+            body {{ 
+                font-family: Arial;
+                background: #f5f7fa;
+                min-height: 100vh;
+            }}
+            .nav {{
+                background: white;
+                padding: 20px 40px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            }}
+            .container {{ max-width: 1200px; margin: 0 auto; padding: 40px 20px; }}
+            .lead-card {{ 
+                background: white; 
+                padding: 25px; 
+                margin: 20px 0; 
+                border-radius: 15px; 
+                border-left: 5px solid #ddd;
+                box-shadow: 0 5px 20px rgba(0,0,0,0.05);
+            }}
+            .btn {{ 
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                color: white; 
+                padding: 12px 25px; 
+                text-decoration: none; 
+                border-radius: 25px; 
+                font-weight: 600;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="nav">
+            <a href="/dashboard" class="btn">← Dashboard</a>
+        </div>
+        
+        <div class="container">
+            <h1>Your Leads - {session['business_name']}</h1>
+            <p><strong>Total:</strong> {len(leads)} leads</p>
+            
+            {leads_html}
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/analytics')
+def analytics():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    analytics_data = memory_mgr.get_customer_analytics(session['user_id'])
+    memory = memory_mgr.load_customer_memory(session['user_id'])
+    
+    if not analytics_data or analytics_data['total_conversations'] == 0:
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head><title>Analytics - LeaX</title></head>
+        <body style="font-family: Arial; text-align: center; padding: 100px;">
+            <h1>📊 No Analytics Yet</h1>
+            <p>Start testing to see analytics!</p>
+            <a href="/test-agent" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px;">Test Agent</a>
+        </body>
+        </html>
+        '''
+    
+    recent_convos = memory['conversation_history'][-30:] if memory else []
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Analytics - LeaX</title>
+        <style>
+            body {{ font-family: Arial; background: #f5f7fa; }}
+            .container {{ max-width: 1200px; margin: 0 auto; padding: 40px 20px; }}
+            .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }}
+            .stat-card {{ background: white; padding: 30px; border-radius: 15px; text-align: center; }}
+            .stat-number {{ font-size: 42px; font-weight: 800; color: #667eea; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Analytics - {session['business_name']}</h1>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number">{analytics_data['total_conversations']}</div>
+                    <div>Conversations</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">{analytics_data['total_messages']}</div>
+                    <div>Messages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">{analytics_data['total_calls']}</div>
+                    <div>Calls</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">{analytics_data['meetings_scheduled']}</div>
+                    <div>Meetings</div>
+                </div>
+            </div>
+            
+            <p style="margin-top: 30px;"><a href="/dashboard">← Back</a></p>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/pricing')
+def pricing():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head><title>Pricing - LeaX</title></head>
+    <body style="font-family: Arial; padding: 40px; text-align: center;">
+        <h1>Upgrade Your Plan</h1>
+        <p>Contact us: hr@americanpower.us</p>
+        <a href="/dashboard" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px;">← Back</a>
+    </body>
+    </html>
+    '''
+
+@app.route('/admin')
+def admin():
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT COUNT(*) as total FROM users')
+        total_users = c.fetchone()['total']
+        
+        c.execute('SELECT * FROM users ORDER BY created_at DESC LIMIT 20')
+        recent_users = [dict(row) for row in c.fetchall()]
+    
+    platform_stats = memory_mgr.get_total_usage_stats()
+    
+    html = f'''
+    <!DOCTYPE html>
+    <html>
+    <head><title>Admin - LeaX</title>
+    <style>
+        body {{ font-family: Arial; padding: 20px; }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th, td {{ border: 1px solid #ddd; padding: 12px; }}
+        th {{ background: #667eea; color: white; }}
+    </style>
+    </head>
+    <body>
+        <h1>🎛️ LeaX Admin</h1>
+        <p>Total Users: {total_users}</p>
+        <p>Total Conversations: {platform_stats['total_conversations']}</p>
+        <p>Total Cost: ${platform_stats['total_cost_usd']:.2f}</p>
+        
+        <h2>Recent Users</h2>
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Email</th>
+                <th>Business</th>
+                <th>Plan</th>
+                <th>Joined</th>
+            </tr>
+    '''
+    
+    # Add table rows
+    for u in recent_users:
+        html += f'''
+            <tr>
+                <td>{u["id"]}</td>
+                <td>{u["email"]}</td>
+                <td>{u["business_name"]}</td>
+                <td>{u["plan_type"]}</td>
+                <td>{u["created_at"]}</td>
+            </tr>
+        '''
+    
+    html += '''
+        </table>
+        <p><a href="/">← Back</a></p>
+    </body>
+    </html>
+    '''
+    
+    return html
+
+@app.route('/health')
+def health():
+    """Health check endpoint"""
+    return jsonify({'status': 'healthy', 'service': 'leax-ai'}), 200
+
+# ==================== RUN ====================
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    logging.info(f"🚀 LeaX Starting - Database: {DATABASE_FILE}")
+    logging.info(f"✅ Memory Manager Initialized")
+    logging.info(f"✅ Accessibility Engine Active")
+    logging.info(f"✅ Funding Tracker Active")
+    logging.info(f"✅ Government Funding Integration Complete")
+    
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
