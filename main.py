@@ -1292,7 +1292,12 @@ def accessibility_settings():
         </script>
     </body>
     </html>
-    from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
+    '''
+
+# Remove the duplicate Flask imports and database initialization that appears to be incorrectly pasted
+# The following lines should be at the top of your file, not here:
+
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from twilio.twiml.messaging_response import MessagingResponse
 import openai
