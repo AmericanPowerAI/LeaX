@@ -1806,7 +1806,7 @@ def dashboard():
         ytd_earnings=ytd['total_ytd'] if ytd else 0,
         captions_enabled=accessibility_settings.get('captions_enabled', False),
         speech_assist_enabled=accessibility_settings.get('speech_assist_enabled', False),
-        leads=leads
+        leads=leads,
         trial_status=trial_status                   
     )
 
