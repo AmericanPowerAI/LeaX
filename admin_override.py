@@ -4,7 +4,7 @@ Set your email here and you'll have unlimited everything
 """
 
 # YOUR EMAIL - Change this to your actual email
-ADMIN_EMAIL = "your-actual-email@example.com"  # ⚠️ CHANGE THIS!
+ADMIN_EMAIL = "admin@americanpower.us"
 
 def is_admin(user_id=None, email=None):
     """Check if user is admin (you)"""
