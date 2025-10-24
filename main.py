@@ -2089,34 +2089,6 @@ Website: {website_url or 'Not provided'}
     
     return jsonify({'success': True, 'preview': preview_response})
 
-@app.route('/enable-accessibility', methods=['POST'])
-def enable_accessibility():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Not logged in'})
-    
-    data = request.json
-    feature = data.get('feature')
-    enabled = data.get('enabled', False)
-    
-    memory = memory_mgr.load_customer_memory(session['user_id'])
-    if not memory:
-        memory = {}
-    
-    if 'accessibility_settings' not in memory:
-        memory['accessibility_settings'] = {}
-    
-    if feature == 'captions':
-        memory['accessibility_settings']['captions_enabled'] = enabled
-        message = 'Real-time captions enabled!' if enabled else 'Real-time captions disabled.'
-    elif feature == 'speech_assist':
-        memory['accessibility_settings']['speech_assist_enabled'] = enabled
-        message = 'Speech clarity assistant enabled!' if enabled else 'Speech clarity assistant disabled.'
-    else:
-        return jsonify({'error': 'Invalid feature'})
-    
-    memory_mgr.save_customer_memory(session['user_id'], memory)
-    
-    return jsonify({'success': True, 'message': message})
 
 @app.route('/leads')
 def view_leads():
