@@ -651,6 +651,9 @@ NOW RESPOND LIKE A REAL HUMAN WHO WANTS TO CLOSE THIS DEAL (2-3 sentences max):"
 def test_agent():
     if 'user_id' not in session:
         return redirect(url_for('login'))
+    # Get trial status
+    trial_status = trial_mgr.get_trial_status(session['user_id'])
+    trials_remaining = trial_status.get('messages_remaining', 0)
     
     with get_db() as conn:
         c = conn.cursor()
@@ -670,7 +673,8 @@ def test_agent():
                          trials_remaining=None)
 
 @app.route('/api/test-chat', methods=['POST'])
-def test_chat():
+@require_trial_or_paid
+def test_chat(trial_info=None):
     if 'user_id' not in session:
         return jsonify({'error': 'Not logged in'})
     
@@ -818,7 +822,11 @@ Website: {business['website_url'] if business and business['website_url'] else '
     
     print(f"✅ Test conversation logged for user {session['user_id']}")
     
-    return jsonify({'reply': ai_reply, 'typing_time': typing_delay})
+    return jsonify({
+        'reply': ai_reply, 
+        'typing_time': typing_delay,
+        'trial_info': trial_info
+    })
 
 # ==================== LIVE AGENT ENDPOINT ====================
 @app.route('/agent/<user_id>', methods=['POST'])
@@ -1531,6 +1539,8 @@ def register():
                 ''', (user_id, plan_type))
                 
                 conn.commit()
+
+            trial_mgr.start_trial(user_id, trial_messages=50, trial_days=7)
             
             memory_path = memory_mgr.create_customer_memory(
                 user_id=user_id,
@@ -1560,23 +1570,8 @@ def register():
 # ==================== PAYPAL CHECKOUT ====================
 @app.route('/checkout/<plan>')
 def checkout(plan):
-    """PayPal checkout page for selected plan"""
-    if plan not in ['basic', 'standard', 'enterprise']:
-        return redirect(url_for('index'))
-    
-    # Plan pricing
-    prices = {
-        'basic': {'amount': '29.99', 'name': 'Basic Plan'},
-        'standard': {'amount': '59.99', 'name': 'Standard Plan'},
-        'enterprise': {'amount': '149.99', 'name': 'Enterprise Plan'}
-    }
-    
-    plan_info = prices[plan]
-    
-    return render_template('checkout.html', 
-                         plan=plan,
-                         plan_name=plan_info['name'],
-                         amount=plan_info['amount'])
+    """Redirect to new payment processor"""
+    return redirect(url_for('payments.checkout', plan=plan))
 
 @app.route('/paypal/create-payment', methods=['POST'])
 def create_payment():
@@ -1748,6 +1743,9 @@ def logout():
 def dashboard():
     if 'user_id' not in session:
         return redirect(url_for('login'))
+
+    # Get trial status
+    trial_status = trial_mgr.get_trial_status(session['user_id'])
     
     # Get current tab from URL parameter
     current_tab = request.args.get('tab', 'overview')
@@ -1809,6 +1807,7 @@ def dashboard():
         captions_enabled=accessibility_settings.get('captions_enabled', False),
         speech_assist_enabled=accessibility_settings.get('speech_assist_enabled', False),
         leads=leads
+        trial_status=trial_status                   
     )
 
 @app.route('/customize')
