@@ -27,6 +27,10 @@ from funding_tracker import FundingTracker
 from admin_settings_enhanced import register_funding_routes
 from health_check import register_health_check
 
+from trial_manager import TrialManager, require_trial_or_paid
+from payment_processor import register_payment_routes
+from admin_override import is_admin, get_admin_privileges
+
 # Initialize Flask app FIRST
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET', 'leax-super-secure-2024-8f7d2a9c1e6b4a0d5c8e2f1b7a9d4c3')
@@ -56,6 +60,9 @@ DATABASE_FILE = os.environ.get('DATABASE_FILE', 'leax_users.db')
 memory_mgr = MemoryManager()
 accessibility = AccessibilityEngine()
 funding = FundingTracker()
+
+trial_mgr = TrialManager()
+register_payment_routes(app)
 
 # Register funding routes
 register_funding_routes(app)
