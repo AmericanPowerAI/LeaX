@@ -670,7 +670,7 @@ def test_agent():
     
     return render_template('test_agent_modern.html', 
                          examples=examples,
-                         trials_remaining=None)
+                         trials_remaining=trials_remaining)
 
 @app.route('/api/test-chat', methods=['POST'])
 @require_trial_or_paid
