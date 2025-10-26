@@ -68,6 +68,8 @@ register_payment_routes(app)
 # Register funding routes
 register_funding_routes(app)
 
+register_api_routes(app)
+
 # ==================== EMAIL NOTIFICATION SYSTEM ====================
 class EmailNotifier:
     """Send comprehensive email notifications"""
