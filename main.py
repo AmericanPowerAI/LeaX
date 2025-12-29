@@ -652,24 +652,31 @@ NOW RESPOND LIKE A REAL HUMAN WHO WANTS TO CLOSE THIS DEAL (2-3 sentences max):"
 # ==================== TEST AGENT ====================
 @app.route('/test-agent')
 def test_agent():
-    if 'user_id' not in session:
+    if 'user_id' not in session and 'free_trial' not in session:
         return redirect(url_for('login'))
+    
     # Get trial status
-    trial_status = trial_mgr.get_trial_status(session['user_id'])
-    trials_remaining = trial_status.get('messages_remaining', 0)
-    
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
-        user = c.fetchone()
+    if 'user_id' in session:
+        # Regular logged-in user
+        trial_status = trial_mgr.get_trial_status(session['user_id'])
+        trials_remaining = trial_status.get('messages_remaining', 0)
         
-        c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
-        business = c.fetchone()
-    
-    examples = generate_example_prompts(
-        session.get('business_name'),
-        business['custom_info'] if business else None
-    )
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],))
+            user = c.fetchone()
+            
+            c.execute('SELECT * FROM business_info WHERE user_id = ?', (session['user_id'],))
+            business = c.fetchone()
+        
+        examples = generate_example_prompts(
+            session.get('business_name'),
+            business['custom_info'] if business else None
+        )
+    else:
+        # Free trial user (not logged in)
+        trials_remaining = 10 - session.get('free_messages_used', 0)
+        examples = ['What are your hours?', 'How much do you charge?', 'Are you available today?']
     
     return render_template('test_agent_modern.html', 
                          examples=examples,
