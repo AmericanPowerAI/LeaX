@@ -1217,6 +1217,14 @@ def index():
                 <p class="tagline">Your 24/7 AI Assistant That Closes Sales While You Sleep</p>
                 
                 <div class="trial-badge">🎁 Try Any Plan FREE During Sign-Up!</div>
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="/try-free" class="try-free-btn">
+                        🚀 TRY 10 MESSAGES FREE - NO PAYMENT REQUIRED
+                    </a>
+                    <p style="color: #666; margin-top: 10px; font-size: 14px;">
+                        @americanpower.us emails get unlimited free access!
+                    </p>
+                </div>
                 
                 <div class="pricing">
                     <div class="plan">
@@ -2391,6 +2399,20 @@ def admin():
 def health():
     """Health check endpoint"""
     return jsonify({'status': 'healthy', 'service': 'leax-ai'}), 200
+
+# ==================== SIMPLE FREE TRIAL ====================
+@app.route('/try-free')
+def try_free():
+    """Simple free trial page - redirects to test agent"""
+    # Check if user is logged in
+    if 'user_id' not in session:
+        # Create a temporary session for free trial
+        session['free_trial'] = True
+        session['free_messages_used'] = 0
+    
+    # Just redirect to the existing test agent
+    flash('🎉 You have 10 free messages to test our AI agent!')
+    return redirect(url_for('test_agent'))
 
 # ==================== RUN ====================
 if __name__ == '__main__':
