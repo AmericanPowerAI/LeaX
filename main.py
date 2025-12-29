@@ -1225,12 +1225,24 @@ def index():
         </style>
     </head>
     <body>
-        <div class="container">
-            <div class="hero">
-                <div class="logo">🤖 LeaX AI</div>
-                <p class="tagline">Your 24/7 AI Assistant That Closes Sales While You Sleep</p>
-                
-                <div class="trial-badge">🎁 Try Any Plan FREE During Sign-Up!</div>
+    <div class="container">
+        <div class="hero">
+            <div class="logo">🤖 LeaX AI</div>
+            <p class="tagline">Your 24/7 AI Assistant That Closes Sales While You Sleep</p>
+            
+            <!-- ADD THIS FREE TRIAL BUTTON -->
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="/try-free" style="background: #10b981; color: white; padding: 20px 40px; 
+                   text-decoration: none; border-radius: 30px; font-weight: 600; font-size: 18px;
+                   display: inline-block;">
+                    🚀 TRY 10 MESSAGES FREE - NO ACCOUNT NEEDED
+                </a>
+                <p style="color: #666; margin-top: 10px; font-size: 14px;">
+                    @americanpower.us emails get unlimited free access!
+                </p>
+            </div>
+            
+            <div class="trial-badge">🎁 Try Any Plan FREE During Sign-Up!</div>
                 <div style="text-align: center; margin: 30px 0;">
                     <a href="/try-free" class="try-free-btn">
                         🚀 TRY 10 MESSAGES FREE - NO PAYMENT REQUIRED
