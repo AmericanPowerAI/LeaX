@@ -1130,6 +1130,28 @@ def index():
                 margin-bottom: 10px;
             }
             .tagline { font-size: 20px; color: #666; margin-bottom: 40px; }
+            
+            /* ADD THESE NEW STYLES */
+            .free-trial-section {
+                background: linear-gradient(135deg, #10b981, #059669);
+                color: white;
+                padding: 30px;
+                border-radius: 15px;
+                margin: 30px 0;
+                text-align: center;
+            }
+            .free-trial-btn {
+                background: white;
+                color: #10b981;
+                padding: 18px 40px;
+                text-decoration: none;
+                border-radius: 30px;
+                font-weight: 700;
+                font-size: 20px;
+                display: inline-block;
+                margin: 20px 0;
+            }
+            
             .pricing { 
                 display: grid; 
                 grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
@@ -1228,6 +1250,7 @@ def index():
                 .logo { font-size: 36px; }
                 .tagline { font-size: 16px; }
                 .plan .price { font-size: 32px; }
+                .free-trial-btn { padding: 15px 30px; font-size: 18px; }
             }
         </style>
     </head>
@@ -1237,80 +1260,73 @@ def index():
             <div class="logo">🤖 LeaX AI</div>
             <p class="tagline">Your 24/7 AI Assistant That Closes Sales While You Sleep</p>
             
-            <!-- ADD THIS FREE TRIAL BUTTON -->
-            <div style="text-align: center; margin: 30px 0;">
-                <a href="/try-free" style="background: #10b981; color: white; padding: 20px 40px; 
-                   text-decoration: none; border-radius: 30px; font-weight: 600; font-size: 18px;
-                   display: inline-block;">
-                    🚀 TRY 10 MESSAGES FREE - NO ACCOUNT NEEDED
+            <!-- FREE TRIAL SECTION - REPLACES THE DUPLICATED BUTTON -->
+            <div class="free-trial-section">
+                <h2 style="font-size: 28px; margin-bottom: 15px;">🚀 Try It FREE First!</h2>
+                <p style="font-size: 18px; margin-bottom: 20px;">
+                    Test our AI agent with 10 free messages. No payment required!
+                </p>
+                <a href="/try-free" class="free-trial-btn">
+                    🎁 START FREE TRIAL
                 </a>
-                <p style="color: #666; margin-top: 10px; font-size: 14px;">
-                    @americanpower.us emails get unlimited free access!
+                <p style="font-size: 14px; margin-top: 15px; opacity: 0.9;">
+                    No credit card • @americanpower.us emails get unlimited access
                 </p>
             </div>
             
             <div class="trial-badge">🎁 Try Any Plan FREE During Sign-Up!</div>
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="/try-free" class="try-free-btn">
-                        🚀 TRY 10 MESSAGES FREE - NO PAYMENT REQUIRED
-                    </a>
-                    <p style="color: #666; margin-top: 10px; font-size: 14px;">
-                        @americanpower.us emails get unlimited free access!
-                    </p>
+                
+            <div class="pricing">
+                <div class="plan">
+                    <h3>Basic</h3>
+                    <div class="price">$29<span>/mo</span></div>
+                    <ul>
+                        <li>AI Phone & SMS Agent</li>
+                        <li>Natural Conversations</li>
+                        <li>Basic Lead Tracking</li>
+                        <li>Email Notifications</li>
+                        <li>Website Integration</li>
+                    </ul>
+                    <a href="/checkout/basic" class="btn">Start Basic</a>
                 </div>
                 
-                <div class="pricing">
-                    <div class="plan">
-                        <h3>Basic</h3>
-                        <div class="price">$29<span>/mo</span></div>
-                        <ul>
-                            <li>AI Phone & SMS Agent</li>
-                            <li>Natural Conversations</li>
-                            <li>Basic Lead Tracking</li>
-                            <li>Email Notifications</li>
-                            <li>Website Integration</li>
-                        </ul>
-                        <a href="/checkout/basic" class="btn">Start Basic</a>
-                    </div>
-                    
-                    <div class="plan featured">
-                        <h3>Standard</h3>
-                        <div class="price">$59<span>/mo</span></div>
-                        <ul>
-                            <li>Everything in Basic</li>
-                            <li>Advanced Lead Scoring</li>
-                            <li>Meeting Scheduler</li>
-                            <li>Conversation Analytics</li>
-                            <li>Priority Support</li>
-                            <li>Custom Training</li>
-                        </ul>
-                        <a href="/checkout/standard" class="btn">Start Standard</a>
-                    </div>
-                    
-                    <div class="plan">
-                        <h3>Enterprise</h3>
-                        <div class="price">$149<span>/mo</span></div>
-                        <ul>
-                            <li>Everything in Standard</li>
-                            <li>Multi-Agent Support</li>
-                            <li>CRM Integration</li>
-                            <li>Advanced Analytics</li>
-                            <li>White-Label Option</li>
-                            <li>Dedicated Account Manager</li>
-                        </ul>
-                        <a href="/checkout/enterprise" class="btn">Start Enterprise</a>
-                    </div>
+                <div class="plan featured">
+                    <h3>Standard</h3>
+                    <div class="price">$59<span>/mo</span></div>
+                    <ul>
+                        <li>Everything in Basic</li>
+                        <li>Advanced Lead Scoring</li>
+                        <li>Meeting Scheduler</li>
+                        <li>Conversation Analytics</li>
+                        <li>Priority Support</li>
+                        <li>Custom Training</li>
+                    </ul>
+                    <a href="/checkout/standard" class="btn">Start Standard</a>
                 </div>
                 
-                <p style="color: #999; font-size: 14px; margin-top: 30px;">
-                    Already have an account? <a href="/login" style="color: #667eea; text-decoration: none; font-weight: 600;">Login here</a>
-                </p>
+                <div class="plan">
+                    <h3>Enterprise</h3>
+                    <div class="price">$149<span>/mo</span></div>
+                    <ul>
+                        <li>Everything in Standard</li>
+                        <li>Multi-Agent Support</li>
+                        <li>CRM Integration</li>
+                        <li>Advanced Analytics</li>
+                        <li>White-Label Option</li>
+                        <li>Dedicated Account Manager</li>
+                    </ul>
+                    <a href="/checkout/enterprise" class="btn">Start Enterprise</a>
+                </div>
             </div>
+            
+            <p style="color: #999; font-size: 14px; margin-top: 30px;">
+                Already have an account? <a href="/login" style="color: #667eea; text-decoration: none; font-weight: 600;">Login here</a>
+            </p>
         </div>
+    </div>
     </body>
     </html>
     '''
-
 # ==================== AUTHENTICATION ====================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
