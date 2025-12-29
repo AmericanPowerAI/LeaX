@@ -1071,6 +1071,20 @@ def handle_voicemail(user_id):
     resp.hangup()
     return str(resp)
 
+# ==================== FREE TRIAL WITHOUT ACCOUNT ====================
+@app.route('/try-free')
+def try_free_no_account():
+    """Let users try 10 messages without creating account"""
+    # Create a temporary session for free trial
+    session['free_trial'] = True
+    session['free_messages_used'] = 0
+    session['temp_business'] = 'Your Business'
+    
+    # Redirect to your existing test agent
+    flash('🎉 You have 10 free messages to test our AI! @americanpower.us emails get unlimited access.')
+    return redirect(url_for('test_agent'))
+
+
 # ==================== LANDING PAGE ====================
 @app.route('/')
 def index():
