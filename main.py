@@ -683,7 +683,6 @@ def test_agent():
                          trials_remaining=trials_remaining)
 
 @app.route('/api/test-chat', methods=['POST'])
-@require_trial_or_paid
 def test_chat(trial_info=None):
     if 'user_id' not in session:
         return jsonify({'error': 'Not logged in'})
