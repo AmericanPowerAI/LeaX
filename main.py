@@ -684,8 +684,42 @@ def test_agent():
 
 @app.route('/api/test-chat', methods=['POST'])
 def test_chat(trial_info=None):
+        # ✅ Allow "Try Free" demo sessions (no login)
     if 'user_id' not in session:
-        return jsonify({'error': 'Not logged in'})
+        if session.get('free_trial') is True:
+            data = request.json or {}
+            user_message = (data.get('message') or '').strip()
+            if not user_message:
+                return jsonify({"error": "Empty message"}), 400
+
+            # basic trial cap
+            used = int(session.get('free_messages_used', 0))
+            if used >= 10:
+                return jsonify({
+                    "error": "Trial limit reached",
+                    "needs_upgrade": True,
+                    "upgrade_url": "/checkout/basic"
+                }), 402
+            session['free_messages_used'] = used + 1
+
+            # lightweight personalization for demo users
+            business_name = session.get('temp_business', 'Your Business')
+            business_context = f"Business: {business_name}\n"
+
+            ai_reply, tokens = generate_human_response(
+                business_name,
+                business_context,
+                user_message,
+                conversation_history=""
+            )
+
+            return jsonify({
+                "reply": ai_reply,
+                "trial_info": {"messages_remaining": 10 - session['free_messages_used']}
+            })
+
+        return jsonify({'error': 'Not logged in'}), 401
+
     
     data = request.json
     user_message = data.get('message')
