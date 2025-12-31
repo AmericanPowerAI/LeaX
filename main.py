@@ -3,6 +3,7 @@ from api_endpoints import register_api_routes
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from twilio.twiml.messaging_response import MessagingResponse
+from dotenv import load_dotenv
 import openai
 import os
 import requests
