@@ -38,8 +38,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET', 'leax-super-secure-2024-8f7d2a9c1e6b4a0d5c8e2f1b7a9d4c3')
 
 # ==================== CONFIGURATION ====================
-openai.api_key = os.environ.get('OPENAI_API_KEY')
 load_dotenv()
+openai.api_key = os.environ.get('OPENAI_API_KEY')
 
 # PayPal Configuration
 paypalrestsdk.configure({
