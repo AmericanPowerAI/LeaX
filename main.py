@@ -39,6 +39,7 @@ app.secret_key = os.environ.get('FLASK_SECRET', 'leax-super-secure-2024-8f7d2a9c
 
 # ==================== CONFIGURATION ====================
 openai.api_key = os.environ.get('OPENAI_API_KEY')
+load_dotenv()
 
 # PayPal Configuration
 paypalrestsdk.configure({
