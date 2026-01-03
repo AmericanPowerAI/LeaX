@@ -744,6 +744,11 @@ NOW RESPOND LIKE A REAL HUMAN WHO WANTS TO CLOSE THIS DEAL (2-3 sentences max):"
 # ==================== TEST AGENT ====================
 @app.route('/test-agent')
 def test_agent():
+       # DEMO USERS: force onboarding first
+    if session.get('free_trial') and session.get('demo_onboarded') is not True:
+        return redirect(url_for('onboarding'))
+
+    # Paid users OR demo users must exist
     if 'user_id' not in session and 'free_trial' not in session:
         return redirect(url_for('login'))
     
