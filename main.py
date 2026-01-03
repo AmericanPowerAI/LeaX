@@ -91,6 +91,41 @@ def onboarding():
 
     return render_template("onboarding.html")
 
+@app.route("/api/onboarding/save", methods=["POST"])
+def onboarding_save():
+    if "user_id" not in session:
+        return jsonify({"error": "Not logged in"}), 401
+
+    payload = request.json or {}
+
+    agent_name = (payload.get("agent_name") or "").strip()
+    role_template = (payload.get("role_template") or "").strip()
+    website_url = (payload.get("website_url") or "").strip()
+    tone = (payload.get("tone") or "confident").strip()
+    primary_goal = (payload.get("primary_goal") or "book_appointments").strip()
+
+    if not agent_name:
+        return jsonify({"error": "Please enter an AI Employee Name."}), 400
+    if not role_template:
+        return jsonify({"error": "Please select a Role Template."}), 400
+
+    user_id = session["user_id"]
+
+    with get_db_connection() as conn:
+        md = _get_user_metadata(conn, user_id)
+        md["onboarding_complete"] = True
+        md["agent_config"] = {
+            "agent_name": agent_name,
+            "role_template": role_template,
+            "website_url": website_url,
+            "tone": tone,
+            "primary_goal": primary_goal,
+        }
+        _set_user_metadata(conn, user_id, md)
+
+    return jsonify({"ok": True, "redirect": url_for("dashboard")})
+
+
 
 # ==================== CONFIGURATION ====================
 load_dotenv()
