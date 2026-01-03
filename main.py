@@ -2588,19 +2588,7 @@ def health():
     """Health check endpoint"""
     return jsonify({'status': 'healthy', 'service': 'leax-ai'}), 200
 
-# ==================== SIMPLE FREE TRIAL ====================
-@app.route('/try-free')
-def try_free():
-    """Simple free trial page - redirects to test agent"""
-    # Check if user is logged in
-    if 'user_id' not in session:
-        # Create a temporary session for free trial
-        session['free_trial'] = True
-        session['free_messages_used'] = 0
-    
-    # Just redirect to the existing test agent
-    flash('🎉 You have 10 free messages to test our AI agent!')
-    return redirect(url_for('test_agent'))
+
 
 # ==================== RUN ====================
 if __name__ == '__main__':
