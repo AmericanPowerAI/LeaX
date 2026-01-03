@@ -125,6 +125,15 @@ def onboarding_save():
 
     return jsonify({"ok": True, "redirect": url_for("dashboard")})
 
+@app.route("/demo-onboarding/skip", methods=["POST"])
+def demo_onboarding_skip():
+    if session.get("free_trial") is not True:
+        return jsonify({"error": "Not demo"}), 400
+
+    session["demo_onboarded"] = True
+    return jsonify({"ok": True, "redirect": "/test-agent"})
+
+
 
 
 # ==================== CONFIGURATION ====================
