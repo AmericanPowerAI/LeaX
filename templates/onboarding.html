@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Create Your AI Employee</title>
+  <style>
+    body{margin:0;font-family:system-ui;background:#0b0f17;color:#eaf0ff;}
+    .layout{display:flex;min-height:100vh}
+    .sidebar{width:280px;background:#0f1624;border-right:1px solid #1c2942;padding:18px}
+    .brand{font-weight:900;letter-spacing:.5px}
+    .nav{margin-top:16px;display:grid;gap:10px}
+    .nav a{color:#cfe0ff;text-decoration:none;padding:10px 12px;border-radius:10px;background:#0b1220;border:1px solid #16233a}
+    .nav a:hover{border-color:#2a3f66}
+    .main{flex:1;padding:28px;display:flex;justify-content:center}
+    .card{width:min(820px,100%);background:#0f1624;border:1px solid #1c2942;border-radius:18px;padding:22px}
+    .headline{font-size:28px;font-weight:900;line-height:1.1}
+    .spark{color:#ffcc00}
+    .sub{opacity:.85;margin-top:8px}
+    .grid{display:grid;gap:14px;margin-top:18px}
+    .row{display:grid;gap:10px}
+    label{font-size:13px;opacity:.85}
+    input,select{width:100%;padding:12px 12px;border-radius:12px;border:1px solid #243655;background:#0b1220;color:#eaf0ff}
+    .cta{margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    button{padding:12px 14px;border-radius:12px;border:0;background:#ffcc00;color:#1b1400;font-weight:900;cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .hint{opacity:.75;font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">LeaX <span class="spark">AI</span></div>
+      <div class="hint" style="margin-top:6px;">Your control room</div>
+      <div class="nav">
+        <a href="#" onclick="return false;">🔥 Setup Rush</a>
+        <a href="#" onclick="return false;">Sessions</a>
+        <a href="#" onclick="return false;">AI Employees</a>
+        <a href="#" onclick="return false;">Knowledge</a>
+        <a href="#" onclick="return false;">Leads</a>
+        <a href="#" onclick="return false;">Appointments</a>
+        <a href="#" onclick="return false;">Settings</a>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="card">
+        <div class="headline">Create your AI Employee in <span class="spark">60 seconds</span>.</div>
+        <div class="sub">This unlocks your chat + builds an agent that can answer questions, capture leads, and book appointments.</div>
+
+        <div class="grid">
+          <div class="row">
+            <label>AI Employee Name</label>
+            <input id="agent_name" placeholder="e.g., Ava (Sales), Marcus (Intake)" />
+          </div>
+
+          <div class="row">
+            <label>Role Template</label>
+            <select id="role_template">
+              <option value="Real Estate Agent">Real Estate Agent</option>
+              <option value="Law Firm Intake">Law Firm Intake</option>
+              <option value="Contractor Sales">Contractor Sales</option>
+              <option value="Fortune 500 Sales">Fortune 500 Sales</option>
+              <option value="Customer Support">Customer Support</option>
+            </select>
+          </div>
+
+          <div class="row">
+            <label>Website URL (recommended)</label>
+            <input id="website_url" placeholder="https://yourwebsite.com" />
+          </div>
+
+          <div class="row">
+            <label>Primary Goal</label>
+            <select id="primary_goal">
+              <option value="book_appointments">Book appointments</option>
+              <option value="qualify_leads">Qualify leads</option>
+              <option value="sell">Sell / take orders</option>
+              <option value="support">Support customers</option>
+            </select>
+          </div>
+
+          <div class="row">
+            <label>Voice / Tone</label>
+            <select id="tone">
+              <option value="confident">Confident closer</option>
+              <option value="friendly">Friendly helper</option>
+              <option value="formal">Formal professional</option>
+              <option value="direct">Direct & fast</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="cta">
+          <button id="saveBtn" onclick="save()">Launch My AI Employee 🚀</button>
+          <div class="hint">Tip: add your website now — next step we’ll scan it to make your agent “know everything.”</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+async function save(){
+  const btn = document.getElementById("saveBtn");
+  btn.disabled = true;
+
+  const payload = {
+    agent_name: document.getElementById("agent_name").value,
+    role_template: document.getElementById("role_template").value,
+    website_url: document.getElementById("website_url").value,
+    primary_goal: document.getElementById("primary_goal").value,
+    tone: document.getElementById("tone").value,
+  };
+
+  const res = await fetch("/api/onboarding/save", {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok){
+    alert(data.error || "Couldn’t save setup.");
+    btn.disabled = false;
+    return;
+  }
+  window.location.href = data.redirect || "/dashboard";
+}
+</script>
+</body>
+</html>
