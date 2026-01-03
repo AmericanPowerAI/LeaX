@@ -33,6 +33,48 @@ from trial_manager import TrialManager, require_trial_or_paid
 from payment_processor import register_payment_routes
 from admin_override import is_admin, get_admin_privileges
 
+
+# ==================== ONBOARDING HELPERS ====================
+def _get_user_metadata(conn, user_id: int) -> dict:
+    cur = conn.cursor()
+    cur.execute("SELECT metadata FROM users WHERE id = ?", (user_id,))
+    row = cur.fetchone()
+    if not row or not row[0]:
+        return {}
+    try:
+        return json.loads(row[0])
+    except Exception:
+        return {}
+
+def _set_user_metadata(conn, user_id: int, data: dict) -> None:
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET metadata = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (json.dumps(data), user_id)
+    )
+    conn.commit()
+
+def is_onboarding_complete(user_id: int) -> bool:
+    with get_db_connection() as conn:
+        md = _get_user_metadata(conn, user_id)
+        return bool(md.get("onboarding_complete") is True)
+
+def require_onboarding(view_func):
+    from functools import wraps
+
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if "user_id" not in session:
+            return redirect(url_for("login"))
+
+        if not is_onboarding_complete(session["user_id"]):
+            return redirect(url_for("onboarding"))
+
+        return view_func(*args, **kwargs)
+
+    return wrapper
+
+
 # Initialize Flask app FIRST
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET', 'leax-super-secure-2024-8f7d2a9c1e6b4a0d5c8e2f1b7a9d4c3')
