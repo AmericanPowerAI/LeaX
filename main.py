@@ -134,8 +134,33 @@ def demo_onboarding_skip():
     if session.get("free_trial") is not True:
         return jsonify({"error": "Not demo"}), 400
 
+    data = request.json or {}
+
+    # Save whatever the user entered (if provided)
+    agent_name = (data.get("agent_name") or "").strip()
+    business_name = (data.get("business_name") or "").strip()
+    department = (data.get("department") or "").strip()
+    role_template = (data.get("role_template") or "").strip()
+    tone = (data.get("tone") or "").strip()
+    primary_goal = (data.get("primary_goal") or "").strip()
+
+    # Store in session for the demo chat to use
+    if agent_name:
+        session["demo_agent_name"] = agent_name
+    if business_name:
+        session["temp_business"] = business_name  # your existing demo code already reads temp_business
+    if department:
+        session["demo_department"] = department
+    if role_template:
+        session["demo_role_template"] = role_template
+    if tone:
+        session["demo_tone"] = tone
+    if primary_goal:
+        session["demo_primary_goal"] = primary_goal
+
     session["demo_onboarded"] = True
     return jsonify({"ok": True, "redirect": "/test-agent"})
+
 
 
 
