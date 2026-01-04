@@ -81,13 +81,17 @@ app.secret_key = os.environ.get('FLASK_SECRET', 'leax-super-secure-2024-8f7d2a9c
 
 @app.route("/onboarding", methods=["GET"])
 def onboarding():
-    # Must be logged in
-    if "user_id" not in session:
+    # ✅ Allow demo users (free_trial) to access onboarding without an account
+    if "user_id" not in session and session.get("free_trial") is not True:
         return redirect(url_for("login"))
 
-    # If already finished onboarding, skip it
-    if is_onboarding_complete(session["user_id"]):
+    # Paid users: if already onboarded, skip onboarding
+    if "user_id" in session and is_onboarding_complete(session["user_id"]):
         return redirect(url_for("dashboard"))
+
+    # Demo users: if they already skipped/onboarded, go to demo chat
+    if session.get("free_trial") is True and session.get("demo_onboarded") is True:
+        return redirect(url_for("test_agent"))
 
     return render_template("onboarding.html")
 
