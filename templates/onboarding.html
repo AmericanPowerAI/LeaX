@@ -100,7 +100,23 @@
   </div>
 
 <script>
+const IS_DEMO = {{ 'true' if session.get('free_trial') else 'false' }};
+
 async function save(){
+
+  // ✅ DEMO USERS: no login required — just start demo session
+  if (IS_DEMO){
+    const res = await fetch("/demo-onboarding/skip", { method:"POST" });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok){
+      alert(data.error || "Could not start demo.");
+      return;
+    }
+    window.location.href = data.redirect || "/test-agent";
+    return;
+  }
+
+  // ✅ PAID USERS: save onboarding to DB
   const btn = document.getElementById("saveBtn");
   btn.disabled = true;
 
@@ -120,12 +136,13 @@ async function save(){
 
   const data = await res.json().catch(()=>({}));
   if(!res.ok){
-    alert(data.error || "Couldn’t save setup.");
+    alert(data.error || "Could not save.");
     btn.disabled = false;
     return;
   }
   window.location.href = data.redirect || "/dashboard";
 }
 </script>
+
 </body>
 </html>
