@@ -1,615 +1,794 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ page_title }} - LeaX</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-            background: #f5f7fa;
-            min-height: 100vh;
-        }
-        
-        /* Navigation */
-        .nav {
-            background: white;
-            padding: 20px 40px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        .logo {
-            font-size: 24px;
-            font-weight: 800;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .nav-links a {
-            margin: 0 15px;
-            color: #333;
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.3s;
-        }
-        .nav-links a:hover { color: #667eea; }
-        .nav-links a.active {
-            color: #667eea;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 5px;
-        }
-        
-        /* Container */
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 40px 20px;
-        }
-        
-        /* Page Header */
-        .page-header {
-            margin-bottom: 30px;
-        }
-        .page-header h1 {
-            font-size: 32px;
-            color: #333;
-            margin-bottom: 10px;
-        }
-        .plan-badge {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            padding: 8px 20px;
-            border-radius: 20px;
-            display: inline-block;
-            font-size: 14px;
-            font-weight: 600;
-        }
-        
-        /* Tabs */
-        .tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #e2e8f0;
-            overflow-x: auto;
-        }
-        .tab {
-            padding: 15px 30px;
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            color: #64748b;
-            border-bottom: 3px solid transparent;
-            transition: all 0.3s;
-            white-space: nowrap;
-        }
-        .tab:hover { color: #667eea; }
-        .tab.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
-        }
-        
-        /* Tab Content */
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-            animation: fadeIn 0.3s;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        /* Cards */
-        .card {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.05);
-            margin-bottom: 20px;
-        }
-        .card h2 {
-            margin-bottom: 20px;
-            color: #333;
-        }
-        
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .stat-card {
-            background: white;
-            padding: 30px;
-            border-radius: 15px;
-            text-align: center;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.05);
-            transition: transform 0.3s;
-        }
-        .stat-card:hover { transform: translateY(-5px); }
-        .stat-number {
-            font-size: 42px;
-            font-weight: 800;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 10px;
-        }
-        .stat-label {
-            color: #666;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        /* Funding Card */
-        .funding-card {
-            background: linear-gradient(135deg, #10b981, #059669);
-            color: white;
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(16,185,129,0.3);
-            margin-bottom: 30px;
-        }
-        .funding-amount {
-            font-size: 64px;
-            font-weight: 800;
-            margin: 20px 0;
-        }
-        .funding-details {
-            opacity: 0.9;
-            font-size: 16px;
-            margin-top: 20px;
-        }
-        .funding-details p {
-            margin: 10px 0;
-        }
-        
-        /* Toggle Switch */
-        .toggle-section {
-            padding: 25px;
-            border: 2px solid #e2e8f0;
-            border-radius: 10px;
-            margin: 20px 0;
-            transition: all 0.3s;
-        }
-        .toggle-section:hover {
-            border-color: #667eea;
-            box-shadow: 0 5px 15px rgba(102,126,234,0.1);
-        }
-        .toggle-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .toggle-switch {
-            position: relative;
-            width: 60px;
-            height: 34px;
-        }
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: .4s;
-            border-radius: 34px;
-        }
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 26px;
-            width: 26px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-        input:checked + .slider {
-            background-color: #10b981;
-        }
-        input:checked + .slider:before {
-            transform: translateX(26px);
-        }
-        .earnings-badge {
-            background: #ffc107;
-            color: #000;
-            padding: 5px 15px;
-            border-radius: 15px;
-            font-size: 14px;
-            font-weight: 700;
-            display: inline-block;
-            margin-top: 10px;
-        }
-        
-        /* Button */
-        .btn {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            padding: 12px 30px;
-            text-decoration: none;
-            border-radius: 25px;
-            display: inline-block;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .btn:hover {
-            transform: scale(1.05);
-            box-shadow: 0 5px 20px rgba(102,126,234,0.3);
-        }
-        .btn-secondary {
-            background: white;
-            color: #667eea;
-            border: 2px solid #667eea;
-        }
-        
-        /* Lead Card */
-        .lead-card {
-            background: white;
-            padding: 25px;
-            margin: 20px 0;
-            border-radius: 15px;
-            border-left: 5px solid #ddd;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.05);
-        }
-        
-        /* Alert */
-        .alert {
-            padding: 15px 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-        }
-        .alert-info {
-            background: #e0f2fe;
-            color: #0c4a6e;
-            border-left: 4px solid #0284c7;
-        }
-        .alert-success {
-            background: #d1fae5;
-            color: #065f46;
-            border-left: 4px solid #10b981;
-        }
-        
-        /* Responsive */
-        @media (max-width: 768px) {
-            .nav {
-                flex-direction: column;
-                gap: 15px;
-            }
-            .tabs {
-                flex-wrap: wrap;
-            }
-            .funding-amount {
-                font-size: 48px;
-            }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard · LeaX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --cream:#FAF9F5;--cream-2:#F3F1EA;--ink:#1A1814;--ink-2:#3D3A35;--ink-3:#7C7770;
+  --gold:#C8931A;--gold-lt:#FDF5E3;--gold-bd:#E8C06A;
+  --teal:#186048;--teal-lt:#EAF3EE;--teal-bd:#7DC4A8;
+  --red:#C0392B;--red-lt:#FEF0EE;
+  --border:#E8E3DA;--white:#FFFFFF;--sidebar:#13120F;
+  --ff-serif:'Lora',Georgia,serif;--ff-sans:'DM Sans',system-ui,sans-serif;
+  --sidebar-w:240px;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--ff-sans);background:var(--cream);color:var(--ink);display:flex}
+aside{width:var(--sidebar-w);background:var(--sidebar);display:flex;flex-direction:column;flex-shrink:0;height:100vh;overflow-y:auto}
+.sidebar-logo{padding:22px 20px 18px;border-bottom:1px solid rgba(255,255,255,.07)}
+.sidebar-logo .logo{font-family:var(--ff-serif);font-size:20px;font-weight:700;color:#fff;letter-spacing:-.3px}
+.sidebar-logo .logo em{color:var(--gold);font-style:normal}
+.sidebar-logo .biz{font-size:12px;color:rgba(255,255,255,.4);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ai-status{margin:14px 12px;padding:12px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px}
+.ai-status-row{display:flex;align-items:center;gap:8px}
+.ai-live-dot{width:8px;height:8px;border-radius:50%;background:#4ADE80;animation:pulse 2s infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.ai-status-name{font-size:13px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ai-status-sub{font-size:11px;color:rgba(255,255,255,.4);margin-top:3px}
+nav{padding:8px 12px;flex:1}
+.nav-section{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.25);padding:16px 8px 8px;margin-top:4px}
+.nav-link{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;color:rgba(255,255,255,.45);font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;margin-bottom:2px}
+.nav-link:hover{background:rgba(255,255,255,.06);color:rgba(255,255,255,.85)}
+.nav-link.active{background:rgba(200,147,26,.15);color:var(--gold)}
+.nav-link svg{width:15px;height:15px;stroke-width:1.75;flex-shrink:0}
+.nav-badge{margin-left:auto;background:var(--gold);color:var(--ink);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;display:none}
+.nav-badge.show{display:inline}
+.sidebar-footer{padding:14px 12px;border-top:1px solid rgba(255,255,255,.07)}
+.upgrade-card{background:rgba(200,147,26,.12);border:1px solid rgba(200,147,26,.25);border-radius:10px;padding:14px}
+.upgrade-card p{font-size:12px;color:rgba(255,255,255,.6);margin-bottom:10px;line-height:1.5}
+.upgrade-btn{display:block;text-align:center;background:var(--gold);color:var(--ink);padding:8px;border-radius:7px;font-size:12px;font-weight:700;text-decoration:none}
+.upgrade-btn:hover{background:#B07E14}
+main{flex:1;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+.topbar{background:var(--white);border-bottom:1px solid var(--border);padding:0 28px;height:60px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-left h1{font-family:var(--ff-serif);font-size:20px;font-weight:700;color:var(--ink);letter-spacing:-.3px}
+.topbar-left p{font-size:12px;color:var(--ink-3);margin-top:1px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;font-family:var(--ff-sans);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;border:1.5px solid var(--border);background:transparent;color:var(--ink-2)}
+.topbar-btn:hover{border-color:var(--ink-3);color:var(--ink)}
+.topbar-btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.topbar-btn.primary:hover{background:var(--teal);border-color:var(--teal)}
+.topbar-btn svg{width:14px;height:14px;stroke-width:2}
+.topbar-avatar{width:34px;height:34px;border-radius:50%;background:var(--gold-lt);border:1.5px solid var(--gold-bd);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--gold);cursor:pointer}
+.content{flex:1;overflow-y:auto;padding:24px 28px}
+.tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:24px}
+.tab{padding:10px 18px;font-size:13px;font-weight:600;color:var(--ink-3);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .2s}
+.tab:hover{color:var(--ink)}
+.tab.active{color:var(--ink);border-bottom-color:var(--gold)}
+.view{display:none}
+.view.active{display:block;animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.metric{background:var(--white);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+.metric-label{font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px}
+.metric-value{font-family:var(--ff-serif);font-size:30px;font-weight:700;color:var(--ink);line-height:1}
+.metric-value.green{color:var(--teal)}
+.metric-value.gold{color:var(--gold)}
+.metric-change{font-size:12px;color:var(--ink-3);margin-top:6px}
+.metric-change .up{color:var(--teal);font-weight:600}
+.two-col{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+.card{background:var(--white);border:1px solid var(--border);border-radius:12px;padding:20px}
+.card-title{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
+.card-title a{font-size:12px;font-weight:500;color:var(--gold);text-decoration:none;cursor:pointer}
+.activity-list{display:flex;flex-direction:column}
+.activity-item{display:flex;gap:12px;align-items:flex-start;padding:13px 0;border-bottom:1px solid var(--border)}
+.activity-item:last-child{border-bottom:none;padding-bottom:0}
+.a-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.a-icon.call{background:var(--teal-lt)} .a-icon.call svg{stroke:var(--teal)}
+.a-icon.sms{background:var(--gold-lt)}  .a-icon.sms svg{stroke:#9A6F0E}
+.a-icon.lead{background:#EEF2FF}        .a-icon.lead svg{stroke:#4F46E5}
+.a-icon svg{width:15px;height:15px;stroke-width:2}
+.a-body{flex:1;min-width:0}
+.a-name{font-size:13px;font-weight:600;color:var(--ink)}
+.a-desc{font-size:12px;color:var(--ink-3);margin-top:3px;line-height:1.5}
+.a-time{font-size:11px;color:var(--ink-3);flex-shrink:0;padding-top:2px}
+.a-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:3px 9px;border-radius:10px;margin-top:7px;text-transform:uppercase;letter-spacing:.5px}
+.a-tag svg{width:10px;height:10px;stroke-width:2.5}
+.a-tag.handled{background:var(--teal-lt);color:var(--teal)}
+.a-tag.lead-tag{background:#EEF2FF;color:#4F46E5}
+.a-tag.booked{background:var(--gold-lt);color:#9A6F0E}
+.quick-actions{display:flex;flex-direction:column;gap:8px}
+.qa-btn{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--white);text-align:left;transition:all .2s;font-family:var(--ff-sans);width:100%}
+.qa-btn:hover{border-color:var(--gold-bd);background:var(--gold-lt)}
+.qa-icon-wrap{width:32px;height:32px;border-radius:8px;background:var(--cream-2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.qa-icon-wrap svg{width:15px;height:15px;stroke:var(--ink-3);stroke-width:2}
+.qa-label{font-size:13px;font-weight:600;color:var(--ink)}
+.qa-desc{font-size:11px;color:var(--ink-3);margin-top:1px}
+.know-section{margin-bottom:20px}
+.know-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink-3);margin-bottom:8px}
+.know-input,textarea.know-input{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:9px;font-family:var(--ff-sans);font-size:14px;color:var(--ink);background:var(--cream);outline:none;transition:border-color .2s;resize:vertical}
+.know-input:focus,textarea.know-input:focus{border-color:var(--gold);background:var(--white)}
+.scan-row{display:flex;gap:10px;margin-top:8px}
+.scan-row input{flex:1;padding:10px 13px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--ff-sans);font-size:13px;outline:none;background:var(--cream);color:var(--ink)}
+.scan-row input:focus{border-color:var(--gold)}
+.save-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px;background:var(--ink);color:#fff;border:none;border-radius:9px;font-family:var(--ff-sans);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s;margin-top:4px}
+.save-btn:hover{background:var(--teal)}
+.save-btn svg{width:14px;height:14px;stroke-width:2}
+.save-confirm{display:none;text-align:center;padding:10px;font-size:13px;font-weight:600;color:var(--teal);margin-top:8px}
+.save-confirm.show{display:block}
+.scan-feedback{display:none;margin-top:10px;padding:10px 14px;border-radius:8px;font-size:13px}
+.scan-feedback.ok{display:block;background:var(--teal-lt);border:1px solid var(--teal-bd);color:var(--teal)}
+.scan-feedback.err{display:block;background:var(--red-lt);border:1px solid #F5C0B8;color:var(--red)}
+.leads-table{width:100%;border-collapse:collapse}
+.leads-table th{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--ink-3);padding:10px 16px;text-align:left;border-bottom:1px solid var(--border);background:var(--cream-2)}
+.leads-table td{padding:13px 16px;font-size:13px;color:var(--ink-2);border-bottom:1px solid var(--border)}
+.leads-table tr:last-child td{border-bottom:none}
+.leads-table tr:hover td{background:var(--cream)}
+.lead-score{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;font-size:12px;font-weight:700}
+.score-hot{background:var(--teal-lt);color:var(--teal)}
+.score-warm{background:var(--gold-lt);color:#9A6F0E}
+.score-cold{background:var(--cream-2);color:var(--ink-3)}
+.lead-badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-new{background:var(--teal-lt);color:var(--teal)}
+.badge-contacted{background:var(--gold-lt);color:#9A6F0E}
+.badge-booked{background:#EEF2FF;color:#4F46E5}
+.src-icon{display:inline-flex;align-items:center;gap:5px;color:var(--ink-3)}
+.src-icon svg{width:12px;height:12px;stroke-width:2}
+.empty-state{padding:48px;text-align:center}
+.empty-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+.empty-icon svg{width:22px;height:22px;stroke-width:1.75}
+.empty-title{font-size:14px;font-weight:600;color:var(--ink-2);margin-bottom:5px}
+.empty-sub{font-size:13px;color:var(--ink-3);line-height:1.6}
+.inline-btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;background:var(--ink);color:#fff;border-radius:8px;font-family:var(--ff-sans);font-size:14px;font-weight:600;text-decoration:none;transition:background .2s;border:none;cursor:pointer}
+.inline-btn:hover{background:var(--teal)}
+.inline-btn svg{width:13px;height:13px;stroke-width:2}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--white);border-radius:16px;padding:28px;max-width:480px;width:90%;box-shadow:0 24px 60px rgba(0,0,0,.12);position:relative}
+.modal h2{font-family:var(--ff-serif);font-size:22px;margin-bottom:8px}
+.modal p{font-size:14px;color:var(--ink-3);margin-bottom:18px;line-height:1.65}
+.modal-close{position:absolute;top:16px;right:16px;background:none;border:none;cursor:pointer;color:var(--ink-3);display:flex;padding:4px;border-radius:6px}
+.modal-close:hover{background:var(--cream-2);color:var(--ink)}
+.modal-close svg{width:17px;height:17px;stroke-width:2}
+.conv-item{padding:16px 0;border-bottom:1px solid var(--border)}
+.conv-item:last-child{border-bottom:none}
+.conv-meta{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.conv-from{font-size:13px;font-weight:600;color:var(--ink)}
+.conv-time{font-size:11px;color:var(--ink-3)}
+.conv-bubble{background:var(--cream-2);border-radius:4px 12px 12px 12px;padding:10px 13px;font-size:13px;color:var(--ink-2);line-height:1.55;margin-bottom:6px}
+.conv-reply{background:var(--teal-lt);border-radius:12px 4px 12px 12px;padding:10px 13px;font-size:13px;color:var(--teal);line-height:1.55;margin-left:24px}
+.conv-type{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.conv-type svg{width:11px;height:11px;stroke-width:2}
+@media(max-width:1024px){.metrics{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}}
+@media(max-width:768px){aside{display:none}.content{padding:16px}.topbar{padding:0 16px}}
+</style>
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="nav">
-        <div class="logo">
-            <i class="fas fa-robot"></i> LeaX AI
-        </div>
-        <div class="nav-links">
-            <a href="/dashboard?tab=overview" class="{{ 'active' if current_tab == 'overview' else '' }}">
-                <i class="fas fa-home"></i> Overview
-            </a>
-            <a href="/dashboard?tab=funding" class="{{ 'active' if current_tab == 'funding' else '' }}">
-                <i class="fas fa-dollar-sign"></i> Funding
-            </a>
-            <a href="/dashboard?tab=accessibility" class="{{ 'active' if current_tab == 'accessibility' else '' }}">
-                <i class="fas fa-universal-access"></i> Accessibility
-            </a>
-            <a href="/test-agent">
-                <i class="fas fa-comments"></i> Test Agent
-            </a>
-            <a href="/logout">
-                <i class="fas fa-sign-out-alt"></i> Logout
-            </a>
-        </div>
-    </nav>
 
-    <!-- Container -->
-    <div class="container">
-        <!-- Page Header -->
-        <div class="page-header">
-            <h1>Welcome back, {{ business_name }}!</h1>
-            <span class="plan-badge">
-                <i class="fas fa-crown"></i> {{ plan_type|upper }} PLAN
-            </span>
-        </div>
+<aside>
+  <div class="sidebar-logo">
+    <div class="logo">Lea<em>X</em></div>
+    <div class="biz" id="sb-bizname">Loading...</div>
+  </div>
+  <div class="ai-status">
+    <div class="ai-status-row">
+      <div class="ai-live-dot"></div>
+      <div class="ai-status-name" id="sb-ainame">AI Employee</div>
+    </div>
+    <div class="ai-status-sub">Answering calls &amp; texts 24/7</div>
+  </div>
+  <nav>
+    <div class="nav-section">Main</div>
+    <div class="nav-link active" onclick="showView('overview')"><i data-lucide="layout-dashboard"></i> Overview</div>
+    <div class="nav-link" onclick="showView('conversations')"><i data-lucide="message-square"></i> Conversations <span class="nav-badge" id="conv-badge">0</span></div>
+    <div class="nav-link" onclick="showView('leads')"><i data-lucide="target"></i> Leads <span class="nav-badge" id="leads-badge">0</span></div>
+    <div class="nav-section">Your AI Employee</div>
+    <div class="nav-link" onclick="showView('knowledge')"><i data-lucide="book-open"></i> Knowledge Base</div>
+    <div class="nav-link" onclick="showView('phone')"><i data-lucide="phone"></i> Phone Setup</div>
+    <div class="nav-link" onclick="showView('bidding')"><i data-lucide="zap"></i> Auto-Bidding</div>
+    <div class="nav-section">Earnings</div>
+    <div class="nav-link" onclick="showView('funding')"><i data-lucide="dollar-sign"></i> Funding Tracker</div>
+    <div class="nav-link" onclick="showView('analytics')"><i data-lucide="trending-up"></i> Analytics</div>
+    <div class="nav-section">Account</div>
+    <div class="nav-link" onclick="window.location='/settings'"><i data-lucide="settings"></i> Settings</div>
+    <div class="nav-link" onclick="window.location='/logout'"><i data-lucide="log-out"></i> Log out</div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="upgrade-card" id="upgradeCard" style="display:none">
+      <p>Upgrade to unlock auto-bidding, unlimited messages &amp; more.</p>
+      <a href="/checkout?plan=standard" class="upgrade-btn">Upgrade Plan</a>
+    </div>
+  </div>
+</aside>
 
-        <!-- Tabs -->
-        <div class="tabs">
-            <button class="tab {{ 'active' if current_tab == 'overview' else '' }}" 
-                    onclick="window.location.href='/dashboard?tab=overview'">
-                <i class="fas fa-chart-line"></i> Overview
-            </button>
-            <button class="tab {{ 'active' if current_tab == 'funding' else '' }}" 
-                    onclick="window.location.href='/dashboard?tab=funding'">
-                <i class="fas fa-money-bill-wave"></i> Funding Dashboard
-            </button>
-            <button class="tab {{ 'active' if current_tab == 'accessibility' else '' }}" 
-                    onclick="window.location.href='/dashboard?tab=accessibility'">
-                <i class="fas fa-universal-access"></i> Accessibility Settings
-            </button>
-            <button class="tab {{ 'active' if current_tab == 'leads' else '' }}" 
-                    onclick="window.location.href='/dashboard?tab=leads'">
-                <i class="fas fa-users"></i> Leads
-            </button>
-            <button class="tab {{ 'active' if current_tab == 'setup' else '' }}" 
-                    onclick="window.location.href='/dashboard?tab=setup'">
-                <i class="fas fa-cog"></i> Quick Setup
-            </button>
-        </div>
+<main>
+  <div class="topbar">
+    <div class="topbar-left">
+      <h1 id="page-title">Overview</h1>
+      <p id="page-sub">Loading your dashboard...</p>
+    </div>
+    <div class="topbar-right">
+      <button class="topbar-btn" onclick="openModal()"><i data-lucide="plus"></i> Update Knowledge</button>
+      <button class="topbar-btn primary" onclick="window.location='/test-agent'">Test My AI <i data-lucide="arrow-right"></i></button>
+      <div class="topbar-avatar" id="topbar-avatar">?</div>
+    </div>
+  </div>
 
-        <!-- TAB 1: Overview -->
-        <div class="tab-content {{ 'active' if current_tab == 'overview' else '' }}">
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-number">{{ stats.total_leads }}</div>
-                    <div class="stat-label">Total Leads</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">{{ stats.total_messages }}</div>
-                    <div class="stat-label">Messages</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">{{ stats.total_calls }}</div>
-                    <div class="stat-label">Calls</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number">{{ stats.meetings_scheduled }}</div>
-                    <div class="stat-label">Meetings</div>
-                </div>
+  <div class="content">
+
+    <!-- OVERVIEW -->
+    <div class="view active" id="view-overview">
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab(this,'today')">Today</div>
+        <div class="tab" onclick="switchTab(this,'week')">This Week</div>
+        <div class="tab" onclick="switchTab(this,'month')">This Month</div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="metric-label">Conversations Handled</div><div class="metric-value green" id="m-conversations">—</div><div class="metric-change" id="m-conversations-sub">Loading...</div></div>
+        <div class="metric"><div class="metric-label">Leads Captured</div><div class="metric-value gold" id="m-leads">—</div><div class="metric-change" id="m-leads-sub">&nbsp;</div></div>
+        <div class="metric"><div class="metric-label">Appointments Booked</div><div class="metric-value" id="m-appts">—</div><div class="metric-change" id="m-appts-sub">&nbsp;</div></div>
+        <div class="metric"><div class="metric-label">Total Messages</div><div class="metric-value gold" id="m-messages">—</div><div class="metric-change" id="m-messages-sub">&nbsp;</div></div>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-title">Recent Activity <a onclick="showView('conversations')">View all</a></div>
+          <div class="activity-list" id="activity-feed">
+            <div class="empty-state" style="padding:24px">
+              <div class="empty-icon" style="background:var(--cream-2)"><i data-lucide="message-square" style="stroke:var(--ink-3)"></i></div>
+              <div class="empty-title">No activity yet</div>
+              <div class="empty-sub">Conversations will appear here once your AI starts handling calls and texts.</div>
             </div>
-
-            <div class="card">
-                <h2><i class="fas fa-rocket"></i> Quick Actions</h2>
-                <a href="/customize" class="btn"><i class="fas fa-edit"></i> Customize Agent</a>
-                <a href="/test-agent" class="btn"><i class="fas fa-comments"></i> Test Agent</a>
-                <a href="/dashboard?tab=leads" class="btn"><i class="fas fa-list"></i> View Leads</a>
-                <a href="/dashboard?tab=funding" class="btn" style="background: linear-gradient(135deg, #10b981, #059669);">
-                    <i class="fas fa-dollar-sign"></i> View Earnings
-                </a>
-            </div>
+          </div>
         </div>
-
-        <!-- TAB 2: Funding Dashboard -->
-        <div class="tab-content {{ 'active' if current_tab == 'funding' else '' }}">
-            <div class="funding-card">
-                <h2><i class="fas fa-money-bill-wave"></i> Government Funding Earnings</h2>
-                <div class="funding-amount">${{ earnings.total_monthly }}</div>
-                <p style="font-size: 20px;">This Month's Revenue from Accessibility Services</p>
-                
-                <div class="funding-details">
-                    <p><i class="fas fa-closed-captioning"></i> <strong>IP CTS Minutes:</strong> ${{ earnings.minutes_earnings }}</p>
-                    <p><i class="fas fa-wifi"></i> <strong>Subsidy Programs:</strong> ${{ earnings.subsidy_earnings }}</p>
-                    <p><i class="fas fa-chart-line"></i> <strong>YTD Total:</strong> ${{ ytd_earnings }}</p>
-                </div>
-
-                <div style="margin-top: 30px;">
-                    <button class="btn" style="background: white; color: #10b981;" 
-                            onclick="window.location.href='/dashboard?tab=accessibility'">
-                        <i class="fas fa-toggle-on"></i> Enable More Features
-                    </button>
-                    <button class="btn" style="background: rgba(255,255,255,0.2);" 
-                            onclick="alert('FCC report generation coming soon!')">
-                        <i class="fas fa-file-download"></i> Download FCC Report
-                    </button>
-                </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="card">
+            <div class="card-title">Quick Actions</div>
+            <div class="quick-actions">
+              <button class="qa-btn" onclick="showView('knowledge')"><div class="qa-icon-wrap"><i data-lucide="book-open"></i></div><div><div class="qa-label">Update Knowledge</div><div class="qa-desc">Add services, pricing, or hours</div></div></button>
+              <button class="qa-btn" onclick="showView('phone')"><div class="qa-icon-wrap"><i data-lucide="phone"></i></div><div><div class="qa-label">Phone Setup</div><div class="qa-desc">Connect or change your number</div></div></button>
+              <button class="qa-btn" onclick="window.location='/test-agent'"><div class="qa-icon-wrap"><i data-lucide="message-square"></i></div><div><div class="qa-label">Test My AI</div><div class="qa-desc">Chat with your AI right now</div></div></button>
             </div>
-
-            <div class="card">
-                <h2><i class="fas fa-info-circle"></i> How Government Funding Works</h2>
-                <div class="alert alert-info">
-                    <strong>You earn money automatically when:</strong>
-                    <ul style="margin: 15px 0 0 20px; line-height: 2;">
-                        <li>Deaf/hard-of-hearing customers use real-time captions (<strong>$1.40/min</strong>)</li>
-                        <li>Customers with speech disabilities use speech clarity (<strong>$1.75/min</strong>)</li>
-                        <li>Customers enroll in Lifeline program (<strong>$9.25/month</strong>)</li>
-                        <li>Customers qualify for ACP broadband (<strong>$30/month</strong>)</li>
-                    </ul>
-                </div>
-                <p style="margin-top: 20px;">
-                    <strong>All tracked automatically.</strong> We generate FCC-compliant reports monthly. 
-                    You receive reimbursement directly from government programs.
-                </p>
+          </div>
+          <div class="card">
+            <div class="card-title">Your AI's Opening Greeting</div>
+            <div style="background:var(--cream-2);border-radius:9px;padding:13px 15px;font-size:13px;color:var(--ink-2);line-height:1.65;border-left:3px solid var(--gold-bd)">
+              "Hi! Thanks for calling — you've reached <strong id="dash-ainame">your company</strong>. How can I help you today?"
             </div>
+            <div style="font-size:11px;color:var(--ink-3);margin-top:10px">Customers hear your company name, not LeaX. <a onclick="showView('knowledge')" style="color:var(--gold);font-weight:500;cursor:pointer">Edit</a></div>
+          </div>
         </div>
-
-        <!-- TAB 3: Accessibility Settings -->
-        <div class="tab-content {{ 'active' if current_tab == 'accessibility' else '' }}">
-            <div class="alert alert-success">
-                <strong><i class="fas fa-check-circle"></i> FCC-Compliant Accessibility Features</strong><br>
-                Enable these to serve people with disabilities AND qualify for government funding!
-            </div>
-
-            <div class="card">
-                <h2><i class="fas fa-universal-access"></i> Enable Accessibility Features</h2>
-                
-                <div class="toggle-section">
-                    <div class="toggle-header">
-                        <div>
-                            <h3><i class="fas fa-closed-captioning"></i> Real-Time Captions (IP CTS)</h3>
-                            <p>Provide real-time captions for deaf/hard-of-hearing callers</p>
-                            <span class="earnings-badge"><i class="fas fa-dollar-sign"></i> Earn $1.40/minute from FCC</span>
-                        </div>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="captions_enabled" 
-                                   {{ 'checked' if captions_enabled else '' }} 
-                                   onchange="toggleAccessibility('captions', this.checked)">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="toggle-section">
-                    <div class="toggle-header">
-                        <div>
-                            <h3><i class="fas fa-microphone"></i> Speech Clarity Assistant (STS)</h3>
-                            <p>Help clarify speech for people with speech disabilities</p>
-                            <span class="earnings-badge"><i class="fas fa-dollar-sign"></i> Earn $1.75/minute from FCC</span>
-                        </div>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="speech_assist_enabled" 
-                                   {{ 'checked' if speech_assist_enabled else '' }} 
-                                   onchange="toggleAccessibility('speech_assist', this.checked)">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="alert alert-info" style="margin-top: 30px;">
-                    <strong><i class="fas fa-lightbulb"></i> How It Works:</strong>
-                    <ul style="margin: 15px 0 0 20px; line-height: 2;">
-                        <li>Toggle features ON with one click</li>
-                        <li>We automatically track all billable minutes</li>
-                        <li>Generate FCC compliance reports monthly</li>
-                        <li>Receive reimbursement payments directly</li>
-                        <li>Serve your community while earning revenue!</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-
-        <!-- TAB 4: Leads -->
-        <div class="tab-content {{ 'active' if current_tab == 'leads' else '' }}">
-            {% if leads %}
-                <div class="card">
-                    <h2><i class="fas fa-users"></i> Your Leads ({{ leads|length }})</h2>
-                    {% for lead in leads %}
-                    <div class="lead-card" style="border-left-color: {{ '#10b981' if lead.lead_score >= 70 else '#fbbf24' if lead.lead_score >= 50 else '#ef4444' }};">
-                        <div style="display: flex; justify-content: space-between; align-items: start;">
-                            <div>
-                                <h3><i class="fas fa-phone"></i> {{ lead.phone_number }}</h3>
-                                <p style="color: #666; margin: 5px 0;">
-                                    <strong>Score:</strong> {{ lead.lead_score }}/100 | 
-                                    <strong>Status:</strong> {{ lead.status|upper }}
-                                </p>
-                                <p><strong>Project:</strong> {{ lead.project_type or 'Not specified' }}</p>
-                                <p><strong>Last Contact:</strong> {{ lead.last_contact }}</p>
-                                {% if lead.meeting_scheduled %}
-                                <p style="color: #10b981; font-weight: bold;">
-                                    <i class="fas fa-calendar-check"></i> MEETING SCHEDULED
-                                </p>
-                                {% endif %}
-                            </div>
-                            <div>
-                                <a href="tel:{{ lead.phone_number }}" class="btn">
-                                    <i class="fas fa-phone"></i> Call Now
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            {% else %}
-                <div class="card" style="text-align: center; padding: 60px;">
-                    <i class="fas fa-inbox" style="font-size: 64px; color: #e2e8f0; margin-bottom: 20px;"></i>
-                    <h2>No Leads Yet</h2>
-                    <p style="color: #666; margin: 20px 0;">Test your agent to start capturing leads automatically!</p>
-                    <a href="/test-agent" class="btn">
-                        <i class="fas fa-comments"></i> Test Agent Now
-                    </a>
-                </div>
-            {% endif %}
-        </div>
-
-        <!-- TAB 5: Quick Setup -->
-        <div class="tab-content {{ 'active' if current_tab == 'setup' else '' }}">
-            <div class="card">
-                <h2><i class="fas fa-plug"></i> Quick Integration Setup</h2>
-                <p>Connect your phone system in 3 easy steps - no coding required!</p>
-
-                <div style="margin: 30px 0;">
-                    <h3>Step 1: Get Your Webhook URL</h3>
-                    <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; margin: 10px 0;">
-                        <code style="font-size: 14px;">https://your-railway-app.railway.app/agent/{{ user_id }}</code>
-                        <button class="btn btn-secondary" style="margin-left: 10px;" 
-                                onclick="copyToClipboard('https://your-railway-app.railway.app/agent/{{ user_id }}')">
-                            <i class="fas fa-copy"></i> Copy
-                        </button>
-                    </div>
-
-                    <h3 style="margin-top: 30px;">Step 2: Connect Twilio</h3>
-                    <ol style="line-height: 2; margin: 10px 0 0 20px;">
-                        <li>Go to <a href="https://console.twilio.com" target="_blank">Twilio Console</a></li>
-                        <li>Click on your phone number</li>
-                        <li>Scroll to "Messaging" section</li>
-                        <li>Paste your webhook URL in "A MESSAGE COMES IN"</li>
-                        <li>Save!</li>
-                    </ol>
-
-                    <h3 style="margin-top: 30px;">Step 3: Test It!</h3>
-                    <p>Send an SMS to your Twilio number. Your AI will respond automatically!</p>
-                    <a href="/test-agent" class="btn" style="margin-top: 15px;">
-                        <i class="fas fa-vial"></i> Test Your Agent
-                    </a>
-                </div>
-
-                <div class="alert alert-info" style="margin-top: 30px;">
-                    <strong><i class="fas fa-question-circle"></i> Need Help?</strong><br>
-                    Contact us at <a href="mailto:support@leax.ai">support@leax.ai</a> for custom deployment assistance.
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
 
-    <script>
-        function toggleAccessibility(feature, enabled) {
-            fetch('/enable-accessibility', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    feature: feature,
-                    enabled: enabled
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if(data.success) {
-                    alert('✅ ' + data.message + '\n\n💰 This feature will now generate government funding revenue!');
-                } else {
-                    alert('❌ Error updating settings');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('❌ Error updating settings');
-            });
-        }
+    <!-- CONVERSATIONS -->
+    <div class="view" id="view-conversations">
+      <div style="margin-bottom:20px"><h2 style="font-family:var(--ff-serif);font-size:26px;font-weight:700;margin-bottom:4px">Conversations</h2><p style="font-size:13px;color:var(--ink-3)">Full transcripts of every call and text your AI handled</p></div>
+      <div class="card" id="conversations-container">
+        <div class="empty-state">
+          <div class="empty-icon" style="background:var(--cream-2)"><i data-lucide="message-square" style="stroke:var(--ink-3)"></i></div>
+          <div class="empty-title">No conversations yet</div>
+          <div class="empty-sub">Once your AI starts handling calls and texts, every conversation will appear here with full transcripts.</div>
+        </div>
+      </div>
+    </div>
 
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                alert('✅ Copied to clipboard!');
-            });
-        }
-    </script>
+    <!-- LEADS -->
+    <div class="view" id="view-leads">
+      <div style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
+        <div><h2 style="font-family:var(--ff-serif);font-size:26px;font-weight:700;margin-bottom:4px">Leads</h2><p style="font-size:13px;color:var(--ink-3)">Every customer your AI captured</p></div>
+        <button onclick="exportLeads()" class="inline-btn"><i data-lucide="download"></i> Export CSV</button>
+      </div>
+      <div class="card" style="padding:0;overflow:auto" id="leads-container">
+        <div class="empty-state">
+          <div class="empty-icon" style="background:var(--teal-lt)"><i data-lucide="target" style="stroke:var(--teal)"></i></div>
+          <div class="empty-title">No leads yet</div>
+          <div class="empty-sub">Leads are captured automatically when your AI handles inbound calls and texts. <a href="/test-agent" style="color:var(--gold)">Test your AI</a> to see how lead capture works.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KNOWLEDGE -->
+    <div class="view" id="view-knowledge">
+      <div style="max-width:640px">
+        <div style="margin-bottom:24px"><h2 style="font-family:var(--ff-serif);font-size:26px;font-weight:700;color:var(--ink);margin-bottom:8px">Knowledge Base</h2><p style="font-size:14px;color:var(--ink-3);line-height:1.65">Everything your AI knows. The more you add, the better they answer customers.</p></div>
+        <div class="card">
+          <div class="know-section">
+            <div class="know-label">AI Employee Name</div>
+            <input class="know-input" type="text" id="k-agentname" placeholder="e.g. Horizon Plumbing Customer Service">
+            <div style="font-size:12px;color:var(--ink-3);margin-top:6px">Customers hear this name. Try "[Your Company] Customer Service" for maximum trust.</div>
+          </div>
+          <div class="know-section">
+            <div class="know-label">Business Description</div>
+            <textarea class="know-input" rows="4" id="k-description" placeholder="What you do, who you serve, your service area, what sets you apart, anything customers frequently ask..."></textarea>
+          </div>
+          <div class="know-section">
+            <div class="know-label">Services &amp; Pricing</div>
+            <textarea class="know-input" rows="4" id="k-services" placeholder="List your services with prices. e.g. Emergency plumbing — $89 service call + parts. Drain cleaning — $120 flat rate..."></textarea>
+          </div>
+          <div class="know-section">
+            <div class="know-label">Hours &amp; Location</div>
+            <input class="know-input" type="text" id="k-hours" placeholder="e.g. Mon–Fri 8am–6pm, Sat 9am–3pm, 24/7 emergency. Serving Dallas, Plano, Frisco TX.">
+          </div>
+          <div class="know-section">
+            <div class="know-label">Rescan Website</div>
+            <div class="scan-row">
+              <input type="url" id="k-url" placeholder="https://yourbusiness.com">
+              <button onclick="rescanSite()" id="rescanBtn" style="padding:10px 16px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-family:var(--ff-sans);font-size:13px;font-weight:600;cursor:pointer;transition:background .2s;white-space:nowrap">Rescan</button>
+            </div>
+            <div class="scan-feedback" id="scanFeedback"></div>
+            <div style="font-size:12px;color:var(--ink-3);margin-top:6px">Rescan any time you update your website — your AI learns your latest info instantly.</div>
+          </div>
+          <button class="save-btn" onclick="saveKnowledge()"><i data-lucide="save"></i> Save &amp; Update My AI</button>
+          <div class="save-confirm" id="saveConfirm">Knowledge updated — your AI is fully trained.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PHONE -->
+    <div class="view" id="view-phone">
+      <div style="max-width:560px">
+        <div style="margin-bottom:24px"><h2 style="font-family:var(--ff-serif);font-size:26px;font-weight:700;margin-bottom:8px">Phone Setup</h2><p style="font-size:14px;color:var(--ink-3)">Connect a phone number so your AI can answer calls and texts.</p></div>
+        <div class="card" style="margin-bottom:14px" id="phone-current" style="display:none"></div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title">Get a New Number</div>
+          <p style="font-size:13px;color:var(--ink-3);margin-bottom:16px;line-height:1.65">We'll provision a real US number in your area code in about 30 seconds.</p>
+          <div style="display:flex;gap:10px">
+            <input type="text" placeholder="Area code (e.g. 214)" id="areaCode" style="flex:1;padding:11px 13px;border:1.5px solid var(--border);border-radius:8px;font-family:var(--ff-sans);font-size:14px;outline:none;background:var(--cream);color:var(--ink)">
+            <button onclick="provisionNumber()" style="display:inline-flex;align-items:center;gap:7px;padding:11px 18px;background:var(--teal);color:#fff;border:none;border-radius:8px;font-family:var(--ff-sans);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s" id="provBtn"><i data-lucide="phone-call"></i> Get Number</button>
+          </div>
+          <div id="provResult" style="margin-top:12px;display:none;border-radius:8px;padding:12px 14px;font-size:13px"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Forward Your Existing Number</div>
+          <p style="font-size:13px;color:var(--ink-3);line-height:1.65;margin-bottom:14px">Already have a number? Forward unanswered calls to LeaX. Regular calls still work normally — only missed ones go to your AI.</p>
+          <a href="/setup-wizard" class="inline-btn">Set up call forwarding <i data-lucide="arrow-right"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <!-- BIDDING -->
+    <div class="view" id="view-bidding">
+      <div style="max-width:560px">
+        <h2 style="font-family:var(--ff-serif);font-size:26px;font-weight:700;margin-bottom:8px">Auto-Bidding</h2>
+        <p style="font-size:14px;color:var(--ink-3);margin-bottom:24px">Your AI bids on Upwork, Thumbtack, Angi, and more — within seconds of each new posting.</p>
+        <div class="card">
+          <div class="empty-state">
+            <div class="empty-icon" style="background:var(--gold-lt)"><i data-lucide="zap" style="stroke:var(--gold)"></i></div>
+            <div class="empty-title" id="bidding-title">Available on Standard &amp; Enterprise plans</div>
+            <div class="empty-sub" id="bidding-sub" style="margin-bottom:20px">Auto-bidding requires platform integrations unlocked at the Standard tier.</div>
+            <a href="/checkout?plan=standard" class="inline-btn" id="bidding-cta">Upgrade to Enable <i data-lucide="arrow-right"></i></a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FUNDING -->
+    <div class="view" id="view-funding">
+      <div style="max-width:600px">
+        <h2 style="font-family:var(--ff-serif);font-size:26px;font-weight:700;margin-bottom:8px">Government Funding Tracker</h2>
+        <p style="font-size:14px;color:var(--ink-3);margin-bottom:24px;line-height:1.65">When you serve customers using accessibility services, you qualify for FCC reimbursements. LeaX tracks this automatically.</p>
+        <div class="metrics" style="grid-template-columns:1fr 1fr;margin-bottom:20px">
+          <div class="metric"><div class="metric-label">This Month (Est.)</div><div class="metric-value gold" id="f-monthly">—</div></div>
+          <div class="metric"><div class="metric-label">YTD Earnings</div><div class="metric-value green" id="f-ytd">—</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Eligible Programs</div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)"><div><div style="font-size:14px;font-weight:600">IP CTS (Captions)</div><div style="font-size:12px;color:var(--ink-3);margin-top:2px">$1.40 per minute of service</div></div><span style="font-size:13px;font-weight:600;color:var(--teal)">Active</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)"><div><div style="font-size:14px;font-weight:600">Lifeline</div><div style="font-size:12px;color:var(--ink-3);margin-top:2px">$9.25/month per qualifying customer</div></div><a href="/apply-for-funding/lifeline" style="font-size:13px;font-weight:600;color:var(--gold);text-decoration:none">Apply</a></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 0"><div><div style="font-size:14px;font-weight:600">ACP</div><div style="font-size:12px;color:var(--ink-3);margin-top:2px">Up to $30/month per household</div></div><a href="/apply-for-funding/acp" style="font-size:13px;font-weight:600;color:var(--gold);text-decoration:none">Apply</a></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANALYTICS -->
+    <div class="view" id="view-analytics">
+      <h2 style="font-family:var(--ff-serif);font-size:26px;font-weight:700;margin-bottom:20px">Analytics</h2>
+      <div class="metrics" style="margin-bottom:24px">
+        <div class="metric"><div class="metric-label">Total Conversations</div><div class="metric-value" id="a-total">—</div></div>
+        <div class="metric"><div class="metric-label">Leads Captured</div><div class="metric-value gold" id="a-leads">—</div></div>
+        <div class="metric"><div class="metric-label">Appointments Booked</div><div class="metric-value green" id="a-booked">—</div></div>
+        <div class="metric"><div class="metric-label">Total Messages</div><div class="metric-value gold" id="a-messages">—</div></div>
+      </div>
+      <div class="card">
+        <div class="empty-state">
+          <div class="empty-icon" style="background:var(--teal-lt)"><i data-lucide="bar-chart-2" style="stroke:var(--teal)"></i></div>
+          <div class="empty-title">Charts coming soon</div>
+          <div class="empty-sub">Call volume by hour · Lead score distribution · Conversion funnel · Revenue trend</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- QUICK KNOWLEDGE MODAL -->
+<div class="modal-bg" id="quickModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()"><i data-lucide="x"></i></button>
+    <h2>Quick Knowledge Update</h2>
+    <p>Add something new your AI should know — a new service, pricing change, holiday hours, or anything customers might ask.</p>
+    <textarea id="quickInfo" style="width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:9px;font-family:var(--ff-sans);font-size:14px;height:120px;outline:none;resize:vertical;color:var(--ink);background:var(--cream)" placeholder="e.g. We now offer same-day AC installation for $1,200 including labor and parts."></textarea>
+    <div id="modalError" style="display:none;margin-top:8px;font-size:13px;color:var(--red)"></div>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button onclick="saveQuickKnowledge()" id="modalSaveBtn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:7px;padding:12px;background:var(--ink);color:#fff;border:none;border-radius:8px;font-family:var(--ff-sans);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s"><i data-lucide="save"></i> Save to My AI</button>
+      <button onclick="closeModal()" style="padding:12px 20px;background:transparent;border:1.5px solid var(--border);border-radius:8px;font-family:var(--ff-sans);font-size:14px;cursor:pointer;color:var(--ink-2)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============= ICON SYSTEM =============
+const ICONS={"arrow-right":'<polyline points="9 18 15 12 9 6"/>',"arrow-left":'<polyline points="15 18 9 12 15 6"/>',"bar-chart-2":'<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',"book-open":'<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',"calendar":'<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',"check":'<polyline points="20 6 9 17 4 12"/>',"dollar-sign":'<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',"download":'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',"layout-dashboard":'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',"log-out":'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',"message-circle":'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',"message-square":'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',"phone":'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',"phone-call":'<path d="M15.05 5A5 5 0 0 1 19 8.95M15.05 1A9 9 0 0 1 23 8.94m-1 7.98v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',"phone-incoming":'<polyline points="16 2 16 8 22 8"/><line x1="23" y1="1" x2="16" y2="8"/><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>',"plus":'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',"save":'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',"settings":'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',"target":'<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',"trending-up":'<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',"user":'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',"user-plus":'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>',"x":'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',"zap":'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'};
+function createIcons(){document.querySelectorAll('i[data-lucide]').forEach(el=>{const n=el.getAttribute('data-lucide'),p=ICONS[n];if(!p)return;const s=document.createElementNS('http://www.w3.org/2000/svg','svg');s.setAttribute('viewBox','0 0 24 24');s.setAttribute('fill','none');s.setAttribute('stroke','currentColor');s.setAttribute('stroke-width','1.75');s.setAttribute('stroke-linecap','round');s.setAttribute('stroke-linejoin','round');s.style.display='inline-block';s.style.verticalAlign='middle';s.style.width=el.style.width||'';s.style.height=el.style.height||'';s.style.stroke=el.style.stroke||'';s.setAttribute('class',el.getAttribute('class')||'');s.innerHTML=p;el.parentNode.replaceChild(s,el);});}
+
+// ============= APP STATE =============
+let API_TOKEN = null;
+let bizData = {};
+let allLeads = [];
+
+// ============= API HELPER =============
+async function api(path, opts={}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (API_TOKEN) headers['Authorization'] = 'Bearer ' + API_TOKEN;
+  const r = await fetch('/api/v1' + path, { headers, ...opts });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.error || `Request failed (${r.status})`);
+  }
+  return r.json();
+}
+
+function fmt$(n) { return n == null ? '—' : '$' + Number(n).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+function fmtNum(n) { return n == null ? '—' : Number(n).toLocaleString(); }
+function timeAgo(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff/60000), h = Math.floor(m/60), d = Math.floor(h/24);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  if (h < 24) return h + ' hr ago';
+  return d + ' day' + (d>1?'s':'') + ' ago';
+}
+
+// ============= INIT =============
+async function initDash() {
+  createIcons();
+
+  // Exchange session for token
+  try {
+    const t = await fetch('/api/v1/auth/web-token', { method:'POST', headers:{'Content-Type':'application/json'} });
+    if (t.ok) {
+      const td = await t.json();
+      API_TOKEN = td.token;
+    }
+  } catch(e) {}
+
+  // Load business info
+  try {
+    bizData = await api('/business/info');
+    applyBizData(bizData);
+  } catch(e) {}
+
+  // Load stats for today tab
+  await loadStats('today');
+
+  // Load activity feed
+  await loadConversations();
+
+  // Load leads count for badge
+  await loadLeads(false);
+
+  // Load funding
+  loadFunding();
+}
+
+function applyBizData(d) {
+  const biz = d.business_name || '';
+  const agent = d.agent_name || (biz ? biz + ' Customer Service' : 'AI Employee');
+  document.getElementById('sb-bizname').textContent = biz || 'Your Business';
+  document.getElementById('sb-ainame').textContent = agent;
+  document.getElementById('dash-ainame').textContent = agent;
+  document.getElementById('topbar-avatar').textContent = (biz||'B').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('page-sub').textContent = 'Good to have you back, ' + (biz||'') + '.';
+
+  // Pre-fill knowledge form
+  document.getElementById('k-agentname').value = d.agent_name || '';
+  document.getElementById('k-url').value = d.website_url || '';
+  if (d.custom_info) document.getElementById('k-description').value = d.custom_info;
+
+  // Show upgrade card for non-paid plans
+  if (!['standard','enterprise'].includes(d.plan_type)) {
+    document.getElementById('upgradeCard').style.display = 'block';
+  }
+  // Show bidding as active for paid plans
+  if (['standard','enterprise'].includes(d.plan_type)) {
+    document.getElementById('bidding-title').textContent = 'Auto-Bidding Active';
+    document.getElementById('bidding-sub').textContent = 'Your AI is actively monitoring and bidding on job platforms.';
+    document.getElementById('bidding-cta').style.display = 'none';
+  }
+  // Show current phone number if provisioned
+  if (d.phone_number) {
+    const pc = document.getElementById('phone-current');
+    pc.style.display = 'block';
+    pc.innerHTML = `<div class="card-title">Active Number</div><div style="display:flex;align-items:center;gap:10px"><div style="font-family:var(--ff-serif);font-size:22px;font-weight:700;color:var(--ink)">${d.phone_number}</div><span style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;background:var(--teal-lt);color:var(--teal)">Live</span></div><div style="font-size:12px;color:var(--ink-3);margin-top:6px">Your AI is answering calls and texts at this number 24/7.</div>`;
+  }
+}
+
+// ============= STATS =============
+async function loadStats(period) {
+  try {
+    const d = await api('/analytics/detailed?period=' + period);
+    document.getElementById('m-conversations').textContent = fmtNum(d.conversations);
+    document.getElementById('m-leads').textContent = fmtNum(d.leads);
+    document.getElementById('m-appts').textContent = fmtNum(d.appointments);
+    document.getElementById('m-messages').textContent = fmtNum(d.messages);
+    document.getElementById('m-conversations-sub').textContent = d.calls + ' calls · ' + d.messages + ' texts';
+    document.getElementById('m-leads-sub').textContent = d.appointments + ' appointments booked';
+  } catch(e) {
+    ['m-conversations','m-leads','m-appts','m-messages'].forEach(id => document.getElementById(id).textContent = '0');
+    document.getElementById('m-conversations-sub').textContent = 'No activity yet';
+  }
+  // Load all-time for analytics tab
+  try {
+    const s = await api('/analytics/summary');
+    document.getElementById('a-total').textContent    = fmtNum(s.total_messages + s.total_calls);
+    document.getElementById('a-leads').textContent    = fmtNum(s.total_leads);
+    document.getElementById('a-booked').textContent   = fmtNum(s.meetings_scheduled);
+    document.getElementById('a-messages').textContent = fmtNum(s.total_messages);
+  } catch(e) {}
+}
+
+// ============= CONVERSATIONS =============
+async function loadConversations() {
+  try {
+    const d = await api('/conversations?limit=20');
+    const convs = d.conversations || [];
+
+    // Update badge
+    if (convs.length > 0) {
+      const b = document.getElementById('conv-badge');
+      b.textContent = convs.length;
+      b.classList.add('show');
+    }
+
+    // Activity feed (overview) — show latest 4
+    const feed = document.getElementById('activity-feed');
+    if (convs.length === 0) return; // keep empty state
+    feed.innerHTML = convs.slice(0,4).map(c => buildActivityItem(c)).join('');
+
+    // Conversations tab
+    const container = document.getElementById('conversations-container');
+    container.innerHTML = '<div style="padding:8px 4px">' + convs.map(c => buildConvItem(c)).join('') + '</div>';
+
+    createIcons();
+  } catch(e) {}
+}
+
+function buildActivityItem(c) {
+  const isCall = c.communication_type === 'call';
+  const iconClass = isCall ? 'call' : 'sms';
+  const iconName = isCall ? 'phone-incoming' : 'message-circle';
+  const from = c.from_number || 'Unknown';
+  const type = isCall ? 'Inbound Call' : 'Text Message';
+  const intent = c.intent_detected || '';
+  const booked = intent.includes('meeting') || intent.includes('appointment') || intent.includes('book');
+  const tag = booked
+    ? `<span class="a-tag booked"><i data-lucide="calendar"></i> Appointment booked</span>`
+    : `<span class="a-tag handled"><i data-lucide="check"></i> Handled</span>`;
+  return `<div class="activity-item">
+    <div class="a-icon ${iconClass}"><i data-lucide="${iconName}"></i></div>
+    <div class="a-body">
+      <div class="a-name">${from} — ${type}</div>
+      <div class="a-desc">${(c.content||'').slice(0,120)}${(c.content||'').length>120?'...':''}</div>
+      ${tag}
+    </div>
+    <div class="a-time">${timeAgo(c.timestamp)}</div>
+  </div>`;
+}
+
+function buildConvItem(c) {
+  const isCall = c.communication_type === 'call';
+  const icon = isCall ? 'phone-incoming' : 'message-circle';
+  const label = isCall ? 'Call' : 'SMS';
+  return `<div class="conv-item">
+    <div class="conv-type"><i data-lucide="${icon}"></i> ${label} · ${c.from_number||'Unknown'} · ${timeAgo(c.timestamp)}</div>
+    <div class="conv-bubble">${c.content||''}</div>
+    ${c.ai_response ? `<div class="conv-reply">${c.ai_response}</div>` : ''}
+  </div>`;
+}
+
+// ============= LEADS =============
+async function loadLeads(render=true) {
+  try {
+    const d = await api('/leads');
+    allLeads = d.leads || [];
+    const stats = d.stats || {};
+    if (allLeads.length > 0) {
+      const b = document.getElementById('leads-badge');
+      b.textContent = allLeads.length;
+      b.classList.add('show');
+    }
+    if (render) renderLeadsTable(allLeads);
+  } catch(e) { if (render) {} }
+}
+
+function renderLeadsTable(leads) {
+  const container = document.getElementById('leads-container');
+  if (!leads.length) return;
+  const rows = leads.map(l => {
+    const score = l.lead_score || 0;
+    const cls = score>=70?'score-hot':score>=50?'score-warm':'score-cold';
+    const status = l.meeting_scheduled ? '<span class="lead-badge badge-booked">Booked</span>'
+      : l.status==='new' ? '<span class="lead-badge badge-new">New Lead</span>'
+      : '<span class="lead-badge badge-contacted">Contacted</span>';
+    const name = l.contact_name || l.phone_number || '—';
+    const src = l.project_type || '—';
+    return `<tr>
+      <td><strong>${name}</strong></td>
+      <td style="color:var(--ink-3)">${l.phone_number||'—'}</td>
+      <td style="color:var(--ink-3)">${src}</td>
+      <td><span class="lead-score ${cls}">${score}</span></td>
+      <td>${status}</td>
+      <td style="color:var(--ink-3)">${timeAgo(l.last_contact||l.created_at)}</td>
+    </tr>`;
+  }).join('');
+  container.innerHTML = `<table class="leads-table"><thead><tr><th>Name</th><th>Phone</th><th>Inquiry</th><th>Score</th><th>Status</th><th>Last Contact</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function exportLeads() {
+  if (!allLeads.length) { alert('No leads to export yet.'); return; }
+  const cols = ['phone_number','contact_name','project_type','lead_score','status','meeting_scheduled','created_at'];
+  const csv = [cols.join(','), ...allLeads.map(l => cols.map(c => JSON.stringify(l[c]??'')).join(','))].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'leax-leads.csv';
+  a.click();
+}
+
+// ============= FUNDING =============
+async function loadFunding() {
+  try {
+    const d = await api('/funding/earnings');
+    document.getElementById('f-monthly').textContent = fmt$(d.monthly?.total_monthly ?? 0);
+    document.getElementById('f-ytd').textContent = fmt$(d.ytd ?? 0);
+  } catch(e) {
+    document.getElementById('f-monthly').textContent = '$0';
+    document.getElementById('f-ytd').textContent = '$0';
+  }
+}
+
+// ============= VIEWS =============
+const pageMeta = {
+  overview:       {title:'Overview',      sub:''},
+  conversations:  {title:'Conversations', sub:'Full transcripts of every handled conversation.'},
+  leads:          {title:'Leads',         sub:'Every customer your AI captured.'},
+  knowledge:      {title:'Knowledge Base',sub:'Train your AI with your latest business info.'},
+  phone:          {title:'Phone Setup',   sub:'Connect a phone number to go live.'},
+  bidding:        {title:'Auto-Bidding',  sub:'Automatic bidding on job platforms.'},
+  funding:        {title:'Funding Tracker',sub:'Government reimbursements you qualify for.'},
+  analytics:      {title:'Analytics',     sub:'How your AI is performing over time.'}
+};
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
+  const el = document.getElementById('view-'+name);
+  if (el) el.classList.add('active');
+  const m = pageMeta[name]||{title:'Dashboard',sub:''};
+  document.getElementById('page-title').textContent = m.title;
+  document.getElementById('page-sub').textContent = m.sub;
+  // Lazy-load data when switching to leads
+  if (name === 'leads') loadLeads(true);
+  createIcons();
+}
+
+// ============= TABS =============
+function switchTab(el, period) {
+  document.querySelectorAll('.tabs .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  loadStats(period);
+}
+
+// ============= KNOWLEDGE SAVE =============
+async function saveKnowledge() {
+  const agentName  = document.getElementById('k-agentname').value.trim();
+  const customInfo = [
+    document.getElementById('k-description').value.trim(),
+    document.getElementById('k-services').value.trim(),
+    document.getElementById('k-hours').value.trim()
+  ].filter(Boolean).join('\n\n');
+  const url = document.getElementById('k-url').value.trim();
+
+  const payload = {};
+  if (agentName)  payload.agent_name  = agentName;
+  if (customInfo) payload.custom_info = customInfo;
+  if (url)        payload.website_url  = url;
+
+  try {
+    await api('/business/update', { method:'POST', body: JSON.stringify(payload) });
+    if (agentName) {
+      document.getElementById('sb-ainame').textContent = agentName;
+      document.getElementById('dash-ainame').textContent = agentName;
+    }
+    const c = document.getElementById('saveConfirm');
+    c.classList.add('show');
+    setTimeout(()=>c.classList.remove('show'), 3500);
+  } catch(e) {
+    alert('Save failed: ' + e.message);
+  }
+}
+
+// ============= RESCAN =============
+async function rescanSite() {
+  const url = document.getElementById('k-url').value.trim();
+  if (!url) { document.getElementById('k-url').focus(); return; }
+  const btn = document.getElementById('rescanBtn');
+  const fb  = document.getElementById('scanFeedback');
+  btn.textContent = 'Scanning...'; btn.disabled = true;
+  fb.className = 'scan-feedback'; fb.textContent = '';
+  try {
+    const d = await api('/scan-website', { method:'POST', body: JSON.stringify({url}) });
+    fb.className = 'scan-feedback ok';
+    fb.textContent = `Website scanned — "${d.title||url}". Your AI now knows your latest services and info.`;
+    // Refresh knowledge form with new custom_info
+    const biz = await api('/business/info');
+    if (biz.custom_info) document.getElementById('k-description').value = biz.custom_info;
+  } catch(e) {
+    fb.className = 'scan-feedback err';
+    fb.textContent = e.message || 'Could not scan website. Check the URL and try again.';
+  } finally {
+    btn.textContent = 'Rescan'; btn.disabled = false;
+  }
+}
+
+// ============= QUICK KNOWLEDGE MODAL =============
+function openModal()  { document.getElementById('quickModal').classList.add('open'); }
+function closeModal() { document.getElementById('quickModal').classList.remove('open'); document.getElementById('modalError').style.display='none'; }
+
+async function saveQuickKnowledge() {
+  const info = document.getElementById('quickInfo').value.trim();
+  if (!info) return;
+  const btn = document.getElementById('modalSaveBtn');
+  const err = document.getElementById('modalError');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  err.style.display = 'none';
+  try {
+    await api('/business/update', { method:'POST', body: JSON.stringify({ custom_info: info }) });
+    closeModal();
+    document.getElementById('quickInfo').value = '';
+  } catch(e) {
+    err.textContent = e.message || 'Save failed. Please try again.';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="save"></i> Save to My AI';
+    createIcons();
+  }
+}
+
+// ============= PHONE PROVISION =============
+async function provisionNumber() {
+  const ac  = (document.getElementById('areaCode').value.trim() || '800');
+  const btn = document.getElementById('provBtn');
+  const res = document.getElementById('provResult');
+  btn.disabled = true; btn.innerHTML = 'Provisioning...';
+  res.style.display = 'none';
+  try {
+    const d = await api('/phone/provision', { method:'POST', body: JSON.stringify({area_code: ac}) });
+    res.style.display = 'block';
+    Object.assign(res.style, {background:'var(--teal-lt)',border:'1px solid var(--teal-bd)',color:'var(--teal)'});
+    res.innerHTML = 'Number live: <strong>' + d.phone_number + '</strong> — your AI is now answering calls at this number.';
+    // Refresh to show active number card
+    const biz = await api('/business/info');
+    applyBizData(biz);
+  } catch(e) {
+    res.style.display = 'block';
+    Object.assign(res.style, {background:'var(--red-lt)',border:'1px solid #F5C0B8',color:'var(--red)'});
+    res.textContent = e.message || 'Could not provision number. Check Twilio credentials in Settings.';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="phone-call"></i> Get Number';
+    createIcons();
+  }
+}
+
+// ============= BOOT =============
+document.addEventListener('DOMContentLoaded', initDash);
+</script>
 </body>
 </html>
