@@ -21,13 +21,13 @@ def require_auth(f):
     """Accept either JWT token (desktop) or Flask session (web dashboard)"""
     @wraps(f)
     def decorated(*args, **kwargs):
-        # --- Web dashboard: session-based auth ---
+        # Web dashboard: session-based auth
         if 'user_id' in session:
             request.user_id = session['user_id']
             request.user_email = session.get('email', '')
             return f(*args, **kwargs)
 
-        # --- Desktop app: JWT auth ---
+        # Desktop app: JWT auth
         token = request.headers.get('Authorization', '').replace('Bearer ', '')
         if not token:
             return jsonify({'error': 'Not authenticated'}), 401
@@ -46,7 +46,6 @@ def require_auth(f):
 
 @api_bp.route('/auth/login', methods=['POST'])
 def api_login():
-    """Desktop app login — returns JWT"""
     data = request.json or {}
     email = data.get('email', '').lower().strip()
     password = data.get('password', '')
@@ -80,7 +79,7 @@ def api_login():
 
 @api_bp.route('/auth/web-token', methods=['POST'])
 def web_token():
-    """Exchange active Flask session for a JWT (used by web dashboard JS)"""
+    """Exchange active Flask session for a JWT used by dashboard JS"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not logged in'}), 401
 
@@ -107,29 +106,35 @@ def validate_token():
 def api_get_business():
     """Return current business info to pre-fill the knowledge base form"""
     from main import get_db
+    import json
 
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM business_info WHERE user_id = ?', (request.user_id,))
-        biz = c.fetchone()
-        c.execute('SELECT business_name, plan_type, metadata FROM users WHERE id = ?', (request.user_id,))
-        user = c.fetchone()
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('SELECT * FROM business_info WHERE user_id = ?', (request.user_id,))
+            biz = c.fetchone()
+            c.execute('SELECT business_name, plan_type, metadata FROM users WHERE id = ?', (request.user_id,))
+            user = c.fetchone()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
     phone_number = None
-    if user and user['metadata']:
-        import json
+    if user:
         try:
-            meta = json.loads(user['metadata'])
+            meta = json.loads(user['metadata'] or '{}')
             phone_number = meta.get('phone_number')
         except Exception:
             pass
 
+    # plan_type from session as fallback
+    plan = (user['plan_type'] if user else None) or session.get('user_plan', 'basic')
+
     return jsonify({
-        'business_name': user['business_name'] if user else '',
-        'plan_type': user['plan_type'] if user else 'basic',
-        'agent_name': biz['agent_personality'] if biz else '',
-        'website_url': biz['website_url'] if biz else '',
-        'custom_info': biz['custom_info'] if biz else '',
+        'business_name': session.get('business_name', '') or (user['business_name'] if user else ''),
+        'plan_type': plan,
+        'agent_name': (biz['agent_personality'] if biz else '') or '',
+        'website_url': (biz['website_url'] if biz else '') or '',
+        'custom_info': (biz['custom_info'] if biz else '') or '',
         'phone_number': phone_number
     })
 
@@ -146,37 +151,40 @@ def api_update_business():
     custom_info = data.get('custom_info') or None
     agent_name  = data.get('agent_name') or None
 
-    with get_db() as conn:
-        c = conn.cursor()
-        # Build partial update — only set fields that were provided
-        fields, params = [], []
-        if website_url is not None:
-            fields.append('website_url = ?'); params.append(website_url)
-        if custom_info is not None:
-            fields.append('custom_info = ?'); params.append(custom_info)
-        if agent_name is not None:
-            fields.append('agent_personality = ?'); params.append(agent_name)
-        fields.append('updated_at = CURRENT_TIMESTAMP')
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            fields, params = [], []
+            if website_url is not None:
+                fields.append('website_url = ?'); params.append(website_url)
+            if custom_info is not None:
+                fields.append('custom_info = ?'); params.append(custom_info)
+            if agent_name is not None:
+                fields.append('agent_personality = ?'); params.append(agent_name)
+            fields.append('updated_at = CURRENT_TIMESTAMP')
 
-        if fields:
-            params.append(request.user_id)
-            c.execute(f'UPDATE business_info SET {", ".join(fields)} WHERE user_id = ?', params)
-            if c.rowcount == 0:
-                # Row doesn't exist yet — insert it
-                c.execute('''
-                    INSERT INTO business_info (user_id, website_url, custom_info, agent_personality)
-                    VALUES (?, ?, ?, ?)
-                ''', (request.user_id, website_url, custom_info, agent_name or 'Customer Service'))
-            conn.commit()
+            if fields:
+                params.append(request.user_id)
+                c.execute(f'UPDATE business_info SET {", ".join(fields)} WHERE user_id = ?', params)
+                if c.rowcount == 0:
+                    c.execute('''
+                        INSERT INTO business_info (user_id, website_url, custom_info, agent_personality)
+                        VALUES (?, ?, ?, ?)
+                    ''', (request.user_id, website_url, custom_info, agent_name or 'Customer Service'))
+                conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    memory_mgr = MemoryManager()
-    memory_mgr.update_business_profile(request.user_id, {
-        k: v for k, v in {
-            'website_url': website_url,
-            'custom_info': custom_info,
-            'personality': agent_name
-        }.items() if v is not None
-    })
+    try:
+        MemoryManager().update_business_profile(request.user_id, {
+            k: v for k, v in {
+                'website_url': website_url,
+                'custom_info': custom_info,
+                'personality': agent_name
+            }.items() if v is not None
+        })
+    except Exception:
+        pass  # memory manager failure shouldn't break the save
 
     return jsonify({'success': True})
 
@@ -213,31 +221,38 @@ def api_scan_website():
         f"Content Summary: {scraped.get('content_summary', '')}"
     )
 
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT custom_info FROM business_info WHERE user_id = ?', (request.user_id,))
-        existing = c.fetchone()
-        # Append scan results to any manually entered info
-        existing_info = (existing['custom_info'] or '') if existing else ''
-        # Strip previous scan blocks so we don't double-append
-        if '--- Website Scan ---' in existing_info:
-            existing_info = existing_info[:existing_info.index('--- Website Scan ---')].strip()
-        full_context = (existing_info + '\n\n--- Website Scan ---\n' + website_context).strip()
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('SELECT custom_info FROM business_info WHERE user_id = ?', (request.user_id,))
+            existing = c.fetchone()
+            existing_info = (existing['custom_info'] or '') if existing else ''
+            if '--- Website Scan ---' in existing_info:
+                existing_info = existing_info[:existing_info.index('--- Website Scan ---')].strip()
+            full_context = (existing_info + '\n\n--- Website Scan ---\n' + website_context).strip()
 
-        c.execute('''
-            INSERT INTO business_info (user_id, website_url, custom_info, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id) DO UPDATE SET
-                website_url = excluded.website_url,
-                custom_info = excluded.custom_info,
-                updated_at = CURRENT_TIMESTAMP
-        ''', (request.user_id, url, full_context))
-        conn.commit()
+            if existing:
+                c.execute('''
+                    UPDATE business_info
+                    SET website_url = ?, custom_info = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE user_id = ?
+                ''', (url, full_context, request.user_id))
+            else:
+                c.execute('''
+                    INSERT INTO business_info (user_id, website_url, custom_info)
+                    VALUES (?, ?, ?)
+                ''', (request.user_id, url, full_context))
+            conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    MemoryManager().update_business_profile(request.user_id, {
-        'website_url': url,
-        'custom_info': full_context
-    })
+    try:
+        MemoryManager().update_business_profile(request.user_id, {
+            'website_url': url,
+            'custom_info': full_context
+        })
+    except Exception:
+        pass
 
     return jsonify({
         'success': True,
@@ -252,7 +267,6 @@ def api_scan_website():
 @api_bp.route('/chat/send', methods=['POST'])
 @require_auth
 def api_chat():
-    """Send a test message to the AI agent"""
     data = request.json or {}
     message = (data.get('message') or '').strip()
     if not message:
@@ -264,14 +278,17 @@ def api_chat():
     from main import generate_human_response, get_db
     from memory_manager import MemoryManager
 
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('SELECT * FROM business_info WHERE user_id = ?', (request.user_id,))
-        biz = c.fetchone()
-        c.execute('SELECT business_name FROM users WHERE id = ?', (request.user_id,))
-        user = c.fetchone()
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('SELECT * FROM business_info WHERE user_id = ?', (request.user_id,))
+            biz = c.fetchone()
+            c.execute('SELECT business_name FROM users WHERE id = ?', (request.user_id,))
+            user = c.fetchone()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
-    biz_name = user['business_name'] if user else 'Business'
+    biz_name = (user['business_name'] if user else None) or session.get('business_name', 'Business')
     business_context = (
         f"Business: {biz_name}\n"
         f"Services: {biz['custom_info'] if biz and biz['custom_info'] else 'General services'}\n"
@@ -288,21 +305,13 @@ def api_chat():
     )
 
     memory_mgr.log_conversation(request.user_id, {
-        'type': 'sms',
-        'direction': 'inbound',
-        'from_number': 'DESKTOP-TEST',
-        'to_number': 'AI-AGENT',
-        'content': message,
-        'ai_response': reply,
-        'ai_model': 'gpt-4',
-        'tokens': tokens,
-        'cost': tokens * 0.00003
+        'type': 'sms', 'direction': 'inbound',
+        'from_number': 'DESKTOP-TEST', 'to_number': 'AI-AGENT',
+        'content': message, 'ai_response': reply,
+        'ai_model': 'gpt-4', 'tokens': tokens, 'cost': tokens * 0.00003
     })
 
-    return jsonify({
-        'reply': reply,
-        'tokens_used': tokens
-    })
+    return jsonify({'reply': reply, 'tokens_used': tokens})
 
 
 # ============= CONVERSATIONS =============
@@ -310,22 +319,22 @@ def api_chat():
 @api_bp.route('/conversations', methods=['GET'])
 @require_auth
 def api_conversations():
-    """Return conversation history for the activity feed and conversations tab"""
     limit  = min(int(request.args.get('limit', 50)), 200)
     offset = int(request.args.get('offset', 0))
-
-    import sqlite3 as _sqlite3
-
     rows = []
+
+    # Try master_tracking.db first
     try:
-        master_db = 'master_tracking.db'
+        import sqlite3 as _sqlite3
+        master_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'master_tracking.db')
+        if not os.path.exists(master_db):
+            master_db = 'master_tracking.db'
         conn = _sqlite3.connect(master_db)
         conn.row_factory = _sqlite3.Row
         c = conn.cursor()
         c.execute('''
             SELECT id, communication_type, direction, from_number, to_number,
-                   content, ai_response, duration_seconds, timestamp,
-                   intent_detected, tokens_used, cost_usd
+                   content, ai_response, duration_seconds, timestamp, intent_detected
             FROM communication_log
             WHERE user_id = ?
             ORDER BY timestamp DESC
@@ -336,32 +345,33 @@ def api_conversations():
     except Exception:
         pass
 
-    # Also pull from the main conversations table as fallback
+    # Fallback to main conversations table
     if not rows:
-        from main import get_db
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute('''
-                SELECT id, phone_number, message_text, response_text, created_at
-                FROM conversations
-                WHERE user_id = ?
-                ORDER BY created_at DESC
-                LIMIT ? OFFSET ?
-            ''', (request.user_id, limit, offset))
-            for r in c.fetchall():
-                rows.append({
-                    'id': r['id'],
-                    'communication_type': 'sms',
-                    'direction': 'inbound',
-                    'from_number': r['phone_number'],
-                    'to_number': None,
-                    'content': r['message_text'],
-                    'ai_response': r['response_text'],
-                    'timestamp': r['created_at'],
-                    'intent_detected': None,
-                    'tokens_used': None,
-                    'cost_usd': None
-                })
+        try:
+            from main import get_db
+            with get_db() as conn:
+                c = conn.cursor()
+                c.execute('''
+                    SELECT id, phone_number, message_text, response_text, created_at
+                    FROM conversations
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT ? OFFSET ?
+                ''', (request.user_id, limit, offset))
+                for r in c.fetchall():
+                    rows.append({
+                        'id': r['id'],
+                        'communication_type': 'sms',
+                        'direction': 'inbound',
+                        'from_number': r['phone_number'],
+                        'to_number': None,
+                        'content': r['message_text'],
+                        'ai_response': r['response_text'],
+                        'timestamp': r['created_at'],
+                        'intent_detected': None
+                    })
+        except Exception:
+            pass
 
     return jsonify({'conversations': rows, 'total': len(rows)})
 
@@ -371,35 +381,35 @@ def api_conversations():
 @api_bp.route('/leads', methods=['GET'])
 @require_auth
 def api_leads():
-    """Return leads list"""
     limit  = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
 
-    from main import get_db
+    try:
+        from main import get_db
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('''
+                SELECT l.id, l.phone_number, l.contact_name, l.business_name,
+                       l.project_type, l.urgency, l.budget, l.status,
+                       l.lead_score, l.meeting_scheduled,
+                       l.last_contact, l.created_at
+                FROM leads l
+                WHERE l.user_id = ?
+                ORDER BY l.lead_score DESC, l.last_contact DESC
+                LIMIT ? OFFSET ?
+            ''', (request.user_id, limit, offset))
+            leads = [dict(r) for r in c.fetchall()]
 
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('''
-            SELECT l.id, l.phone_number, l.contact_name, l.business_name,
-                   l.project_type, l.urgency, l.budget, l.status,
-                   l.lead_score, l.meeting_scheduled,
-                   l.last_contact, l.created_at,
-                   (SELECT COUNT(*) FROM lead_conversations lc WHERE lc.lead_id = l.id) as message_count
-            FROM leads l
-            WHERE l.user_id = ?
-            ORDER BY l.lead_score DESC, l.last_contact DESC
-            LIMIT ? OFFSET ?
-        ''', (request.user_id, limit, offset))
-        leads = [dict(r) for r in c.fetchall()]
-
-        c.execute('''
-            SELECT COUNT(*) as total,
-                   COUNT(CASE WHEN status = "new" THEN 1 END) as new_count,
-                   COUNT(CASE WHEN lead_score >= 70 THEN 1 END) as hot_count,
-                   COUNT(CASE WHEN meeting_scheduled = 1 THEN 1 END) as booked_count
-            FROM leads WHERE user_id = ?
-        ''', (request.user_id,))
-        stats = dict(c.fetchone())
+            c.execute('''
+                SELECT COUNT(*) as total,
+                       COUNT(CASE WHEN status = "new" THEN 1 END) as new_count,
+                       COUNT(CASE WHEN lead_score >= 70 THEN 1 END) as hot_count,
+                       COUNT(CASE WHEN meeting_scheduled = 1 THEN 1 END) as booked_count
+                FROM leads WHERE user_id = ?
+            ''', (request.user_id,))
+            stats = dict(c.fetchone())
+    except Exception as e:
+        return jsonify({'leads': [], 'stats': {}, 'error': str(e)})
 
     return jsonify({'leads': leads, 'stats': stats})
 
@@ -409,20 +419,24 @@ def api_leads():
 @api_bp.route('/analytics/summary', methods=['GET'])
 @require_auth
 def api_analytics():
-    """Overall analytics summary"""
-    from memory_manager import MemoryManager
-    from main import get_db
+    try:
+        from memory_manager import MemoryManager
+        analytics = MemoryManager().get_customer_analytics(request.user_id) or {}
+    except Exception:
+        analytics = {}
 
-    analytics = MemoryManager().get_customer_analytics(request.user_id) or {}
-
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('''
-            SELECT COUNT(*) as total_leads,
-                   COUNT(CASE WHEN meeting_scheduled = 1 THEN 1 END) as meetings
-            FROM leads WHERE user_id = ?
-        ''', (request.user_id,))
-        lead_stats = c.fetchone()
+    try:
+        from main import get_db
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('''
+                SELECT COUNT(*) as total_leads,
+                       COUNT(CASE WHEN meeting_scheduled = 1 THEN 1 END) as meetings
+                FROM leads WHERE user_id = ?
+            ''', (request.user_id,))
+            lead_stats = c.fetchone()
+    except Exception:
+        lead_stats = None
 
     return jsonify({
         'total_messages':     analytics.get('total_messages', 0),
@@ -435,66 +449,65 @@ def api_analytics():
 @api_bp.route('/analytics/detailed', methods=['GET'])
 @require_auth
 def api_analytics_detailed():
-    """
-    Period-based stats for the dashboard tabs.
-    ?period=today | week | month
-    """
     period = request.args.get('period', 'today')
 
-    import sqlite3 as _sqlite3
-    from main import get_db
-
-    # Date filter
     now = datetime.utcnow()
     if period == 'today':
         since = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     elif period == 'week':
         since = (now - timedelta(days=7)).isoformat()
-    else:  # month
+    else:
         since = (now - timedelta(days=30)).isoformat()
 
     conversations, calls, messages = 0, 0, 0
 
     try:
-        conn = _sqlite3.connect('master_tracking.db')
-        conn.row_factory = _sqlite3.Row
-        c = conn.cursor()
-        c.execute('''
-            SELECT
-                COUNT(*) as total,
-                COUNT(CASE WHEN communication_type = "call" THEN 1 END) as calls,
-                COUNT(CASE WHEN communication_type = "sms"  THEN 1 END) as messages
-            FROM communication_log
-            WHERE user_id = ? AND timestamp >= ?
-        ''', (request.user_id, since))
-        row = c.fetchone()
-        if row:
-            conversations = row['total']
-            calls         = row['calls']
-            messages      = row['messages']
-        conn.close()
+        import sqlite3 as _sqlite3
+        master_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'master_tracking.db')
+        if not os.path.exists(master_db):
+            master_db = 'master_tracking.db'
+        if os.path.exists(master_db):
+            conn = _sqlite3.connect(master_db)
+            conn.row_factory = _sqlite3.Row
+            c = conn.cursor()
+            c.execute('''
+                SELECT COUNT(*) as total,
+                       COUNT(CASE WHEN communication_type = "call" THEN 1 END) as calls,
+                       COUNT(CASE WHEN communication_type = "sms"  THEN 1 END) as messages
+                FROM communication_log
+                WHERE user_id = ? AND timestamp >= ?
+            ''', (request.user_id, since))
+            row = c.fetchone()
+            if row:
+                conversations = row['total']
+                calls         = row['calls']
+                messages      = row['messages']
+            conn.close()
     except Exception:
         pass
 
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute('''
-            SELECT COUNT(*) as leads,
-                   COUNT(CASE WHEN meeting_scheduled = 1 THEN 1 END) as booked
-            FROM leads
-            WHERE user_id = ? AND created_at >= ?
-        ''', (request.user_id, since))
-        r = c.fetchone()
-        leads  = r['leads']  if r else 0
-        booked = r['booked'] if r else 0
+    leads, booked = 0, 0
+    try:
+        from main import get_db
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute('''
+                SELECT COUNT(*) as leads,
+                       COUNT(CASE WHEN meeting_scheduled = 1 THEN 1 END) as booked
+                FROM leads
+                WHERE user_id = ? AND created_at >= ?
+            ''', (request.user_id, since))
+            r = c.fetchone()
+            if r:
+                leads  = r['leads']
+                booked = r['booked']
+    except Exception:
+        pass
 
     return jsonify({
-        'period':        period,
-        'conversations': conversations,
-        'calls':         calls,
-        'messages':      messages,
-        'leads':         leads,
-        'appointments':  booked
+        'period': period, 'conversations': conversations,
+        'calls': calls, 'messages': messages,
+        'leads': leads, 'appointments': booked
     })
 
 
@@ -503,12 +516,12 @@ def api_analytics_detailed():
 @api_bp.route('/phone/provision', methods=['POST'])
 @require_auth
 def api_provision_phone():
-    """Provision a new Twilio phone number"""
     data = request.json or {}
     area_code = data.get('area_code', '800')
 
     from twilio.rest import Client
     from main import get_db
+    import json
 
     if not TWILIO_SID or not TWILIO_TOKEN:
         return jsonify({'error': 'Twilio is not configured. Add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to your environment variables.'}), 503
@@ -518,7 +531,7 @@ def api_provision_phone():
     try:
         available = client.available_phone_numbers('US').local.list(area_code=area_code, limit=1)
         if not available:
-            return jsonify({'error': f'No numbers available in area code {area_code}. Try a different area code.'}), 404
+            return jsonify({'error': f'No numbers available in area code {area_code}.'}), 404
 
         webhook_url = f"{request.host_url}agent/{request.user_id}"
 
@@ -528,7 +541,6 @@ def api_provision_phone():
             voice_url=webhook_url, voice_method='POST'
         )
 
-        import json
         with get_db() as conn:
             c = conn.cursor()
             c.execute('SELECT metadata FROM users WHERE id = ?', (request.user_id,))
@@ -560,14 +572,18 @@ def api_provision_phone():
 @api_bp.route('/funding/earnings', methods=['GET'])
 @require_auth
 def api_funding_earnings():
-    from funding_tracker import FundingTracker
-    tracker = FundingTracker()
-    earnings = tracker.get_monthly_earnings(request.user_id)
-    ytd      = tracker.get_total_earnings_ytd(request.user_id)
-    return jsonify({
-        'monthly': earnings,
-        'ytd': ytd.get('total_ytd', 0) if ytd else 0
-    })
+    try:
+        from funding_tracker import FundingTracker
+        tracker = FundingTracker()
+        earnings = tracker.get_monthly_earnings(request.user_id)
+        try:
+            ytd = tracker.get_total_earnings_ytd(request.user_id)
+            ytd_val = ytd.get('total_ytd', 0) if ytd else 0
+        except Exception:
+            ytd_val = 0
+        return jsonify({'monthly': earnings, 'ytd': ytd_val})
+    except Exception as e:
+        return jsonify({'monthly': {'total_monthly': 0}, 'ytd': 0})
 
 
 # ============= REGISTRATION =============
